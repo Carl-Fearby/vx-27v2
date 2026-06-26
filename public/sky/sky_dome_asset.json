@@ -1,0 +1,40 @@
+{
+  "asset_type": "sky_dome",
+  "name": "Bright Day Sky Dome",
+  "version": "4.0-4k-webp",
+  "format": "equirectangular",
+  "resolution": {
+    "width": 4096,
+    "height": 2048
+  },
+  "files": {
+    "primary_webp": "sky_dome_equirectangular_4k.webp",
+    "primary_jpg": "sky_dome_equirectangular_8k_seamless.jpg"
+  },
+  "implementation": {
+    "mapping": "Equirectangular on inward-facing sphere; horizontal wrap Repeat.",
+    "recommended_geometry": "Sphere or hemisphere with inward-facing normals.",
+    "material_settings": {
+      "unlit": true,
+      "double_sided": true,
+      "cast_shadows": false,
+      "receive_shadows": false,
+      "depth_write": false,
+      "sRGBTexture": true
+    },
+    "orientation": {
+      "up_axis": "Y",
+      "horizon_position": 0.78,
+      "uv_seam": "left/right edge — edges numerically matched"
+    }
+  },
+  "qa": {
+    "edge_seam_fixed": true,
+    "edge_blend_width_px": 384
+  },
+  "visual_description": {
+    "time_of_day": "daylight",
+    "cloud_style": "soft fluffy cumulus with wispy cirrus",
+    "sky_color": "deep blue overhead fading to pale horizon haze"
+  }
+}

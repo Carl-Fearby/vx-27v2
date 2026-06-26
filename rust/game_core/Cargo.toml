@@ -1,0 +1,15 @@
+[package]
+name = "game_core"
+version = "0.1.0"
+edition = "2021"
+description = "VX-27 core game logic compiled to WebAssembly"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -1,0 +1,35 @@
+{
+  "asset": "VX-27 sci-fi wall panel texture pack",
+  "source_dimensions": {
+    "width": 2172,
+    "height": 724,
+    "aspect": "3:1"
+  },
+  "format": "WebP",
+  "tiling": "intended for horizontal tiling; all maps share identical dimensions",
+  "maps": {
+    "baseColor": "vx27_wall_albedo.webp",
+    "normal": "vx27_wall_normal.webp",
+    "roughness": "vx27_wall_roughness.webp",
+    "metallic": "vx27_wall_metallic.webp",
+    "ambientOcclusion": "vx27_wall_ao.webp",
+    "height": "vx27_wall_height.webp",
+    "emissive": "vx27_wall_emissive.webp",
+    "alpha": "vx27_wall_alpha.webp"
+  },
+  "recommended_material": {
+    "colorSpace": "sRGB for albedo/emissive; NonColor/Linear for normal, roughness, metallic, AO, height",
+    "metalness": 1.0,
+    "roughness": 1.0,
+    "normalScale": 0.75,
+    "heightScale": "0.02 to 0.05 metres depending on wall scale",
+    "emissiveColor": "#009DFF",
+    "emissiveIntensity": "3 to 8 for dark scenes; enable bloom/glow layer for blue lights",
+    "uvScale": "repeat X as needed, Y = 1 for full wall strip"
+  },
+  "notes": [
+    "Blue/cyan light pixels are isolated into emissive map so they stay bright when the scene is dark.",
+    "Albedo has the blue glow reduced slightly to avoid double-lighting when emissive is active.",
+    "Normal, height and AO are derived from the wall image and should be treated as game-ready support maps rather than scanned geometry."
+  ]
+}

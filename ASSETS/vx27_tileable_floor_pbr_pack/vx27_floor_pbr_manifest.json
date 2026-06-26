@@ -1,0 +1,15 @@
+{
+  "asset": "VX-27 Tileable Sci-Fi Floor PBR Pack",
+  "workflow": "metallic_roughness",
+  "tileable": true,
+  "resolution": "1254x1254",
+  "maps": {
+    "albedo/base color": "vx27_floor_albedo_basecolor.png",
+    "normal": "vx27_floor_normal.png",
+    "roughness": "vx27_floor_roughness.png",
+    "metallic": "vx27_floor_metallic.png",
+    "ambient occlusion": "vx27_floor_ao.png",
+    "height/displacement": "vx27_floor_height.png"
+  },
+  "notes": "Straight top-down sci-fi floor texture pack for the VX-27 corridor style."
+}

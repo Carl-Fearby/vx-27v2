@@ -1,0 +1,744 @@
+@import "tailwindcss";
+@import "./hud.css";
+
+:root {
+  color-scheme: dark;
+  --font-hud: var(--font-futuristic), "Orbitron", "Eurostile", "Rajdhani", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: #0a0a0f;
+  color: #f4f4f5;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+body:has(.app-shell) {
+  overflow: hidden;
+}
+
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: var(--font-hud);
+}
+
+.start-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 2rem;
+  font-family: var(--font-hud);
+  background:
+    radial-gradient(circle at top, rgba(56, 88, 168, 0.22), transparent 42%),
+    radial-gradient(circle at bottom right, rgba(120, 48, 96, 0.18), transparent 36%),
+    linear-gradient(180deg, #101018 0%, #0a0a0f 100%);
+}
+
+.start-card {
+  width: min(100%, 32rem);
+  padding: 2rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 10, 16, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.start-eyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(147, 197, 253, 0.85);
+}
+
+.start-title {
+  margin: 0;
+  font-size: clamp(2.5rem, 8vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.start-copy {
+  margin: 1rem 0 1.75rem;
+  line-height: 1.6;
+  color: rgba(244, 244, 245, 0.72);
+}
+
+.loading-block {
+  margin-bottom: 1.5rem;
+}
+
+.loading-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(244, 244, 245, 0.7);
+}
+
+.loading-track {
+  overflow: hidden;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.loading-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  transition: width 180ms ease-out;
+}
+
+.start-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 3rem;
+  border: 0;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease,
+    filter 150ms ease;
+}
+
+.start-button:hover,
+.start-button:focus-visible {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.start-button--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.start-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.start-button--secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.start-button--secondary:hover,
+.start-button--secondary:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  filter: none;
+}
+
+.settings-button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  background: rgba(8, 8, 12, 0.72);
+  color: rgba(244, 244, 245, 0.9);
+  font-size: 1.15rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.settings-button:hover,
+.settings-button:focus-visible {
+  background: rgba(18, 18, 24, 0.9);
+  transform: translateY(-1px);
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(4, 4, 8, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.settings-panel,
+.settings-popout--docked,
+.material-edit-panel {
+  font-family: var(--font-hud);
+}
+
+.settings-panel {
+  width: min(100%, 40rem);
+  max-height: min(92vh, 52rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 12, 18, 0.97);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.settings-eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(147, 197, 253, 0.85);
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.settings-close {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(244, 244, 245, 0.85);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-close:hover,
+.settings-close:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.settings-body {
+  position: relative;
+  flex: 1;
+  min-height: 14rem;
+  overflow: hidden;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.settings-nav {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.settings-nav-item:hover,
+.settings-nav-item:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
+.settings-nav-item-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.settings-nav-item-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.settings-nav-item-description {
+  font-size: 0.78rem;
+  color: rgba(244, 244, 245, 0.62);
+}
+
+.settings-nav-item-chevron {
+  flex-shrink: 0;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: rgba(147, 197, 253, 0.75);
+}
+
+.settings-popout {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.65rem;
+  overflow: hidden;
+}
+
+.settings-popout--docked {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 31;
+  width: min(calc(100vw - 2rem), 26rem);
+  padding: 0.85rem 1rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 12, 18, 0.96);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  animation: settings-popout-dock-in 200ms ease;
+}
+
+@keyframes settings-popout-dock-in {
+  from {
+    opacity: 0;
+    transform: translateX(-1.25rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes settings-popout-in {
+  from {
+    opacity: 0;
+    transform: translateX(1.25rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.settings-popout-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.settings-popout-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-popout-close {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.settings-back {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(244, 244, 245, 0.85);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-back:hover,
+.settings-back:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.settings-popout-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.settings-popout-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
+}
+
+.settings-popout-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-popout-body::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 140, 0.4);
+  border-radius: 3px;
+}
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-group-label {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(147, 197, 253, 0.65);
+}
+
+.settings-group-label:first-child {
+  margin-top: 0;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settings-row--slider {
+  grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 13.5rem);
+  cursor: default;
+}
+
+.settings-row--toggle {
+  cursor: pointer;
+}
+
+.settings-row-copy {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.settings-row-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.settings-row-hint {
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: rgba(244, 244, 245, 0.55);
+}
+
+.settings-row-control {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.settings-row-control output {
+  flex-shrink: 0;
+  min-width: 2.6rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: rgba(147, 197, 253, 0.9);
+}
+
+.settings-slider {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}
+
+.settings-toggle {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}
+
+.settings-row--coords {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  cursor: default;
+}
+
+.settings-coords {
+  display: block;
+  margin-top: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.55rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.92);
+  word-break: break-word;
+}
+
+.settings-copy-button {
+  flex-shrink: 0;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(139, 92, 246, 0.18);
+  color: #f4f4f5;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-copy-button:hover:not(:disabled),
+.settings-copy-button:focus-visible:not(:disabled) {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+.settings-copy-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.settings-action-button {
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f4f5;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-action-button:hover,
+.settings-action-button:focus-visible {
+  background: rgba(139, 92, 246, 0.22);
+}
+
+.loading-screen {
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at top, #1a1a2e, #0a0a0f);
+}
+
+.babylon-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}
+
+.babylon-canvas--edit-mode {
+  cursor: crosshair;
+}
+
+.material-edit-banner {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  z-index: 24;
+  transform: translateX(-50%);
+  max-width: min(92vw, 42rem);
+  padding: 0.65rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: rgba(12, 12, 20, 0.88);
+  color: rgba(244, 244, 245, 0.95);
+  font-size: 0.88rem;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.material-edit-banner kbd {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  font-family: inherit;
+  font-size: 0.82em;
+}
+
+.material-edit-panel {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 25;
+  width: min(100%, 22rem);
+  max-height: min(78vh, 40rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 12, 18, 0.96);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.material-edit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.material-edit-eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(167, 139, 250, 0.9);
+}
+
+.material-edit-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.material-edit-list {
+  display: grid;
+  gap: 0.75rem;
+  overflow: auto;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.settings-rebind-prompt {
+  margin: 0 0 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.55rem;
+  font-size: 0.8rem;
+  color: #f4c4bc;
+  background: rgba(196, 74, 58, 0.12);
+  border: 1px solid rgba(196, 74, 58, 0.35);
+}
+
+.bindings-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+}
+
+.binding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.8rem;
+}
+
+.binding-label {
+  color: #e4e4e7;
+  flex: 1;
+  min-width: 0;
+}
+
+.binding-key {
+  min-width: 3.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: #f4f4f5;
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.binding-key:hover {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.45);
+}
+
+.binding-key--active {
+  border-color: rgba(196, 74, 58, 0.65);
+  background: rgba(196, 74, 58, 0.18);
+  color: #ffccbb;
+}
+
+.binding-key--fixed {
+  cursor: default;
+  color: #a1a1aa;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.binding-row--fixed .binding-key:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+}
