@@ -6,10 +6,12 @@ import {
   Engine,
   ImageProcessingConfiguration,
   FreeCamera,
+  Mesh,
   MeshBuilder,
   PointerEventTypes,
   PBRMaterial,
   Quaternion,
+  Ray,
   Scene,
   Vector3,
 } from "@babylonjs/core";
@@ -20,29 +22,34 @@ import {
 } from "@/lib/lighting/createOutdoorSky";
 import { createPlayerFlashlight, type PlayerFlashlight } from "@/lib/lighting/createPlayerFlashlight";
 import { createMotionBlur, type SceneMotionBlur } from "@/lib/postProcess/createMotionBlur";
-import {
-  applyRainWetnessToFloor,
-  createRainSystem,
-  disposeRainSystem,
-  floorWetnessNeedsFillExclusion,
-  rainCanvasFilter,
-  updateRainSystem,
-  type RainSystem,
-} from "@/lib/weather/rain";
 import { createTileableFloorMaterial } from "@/lib/floor/createTileableFloorMaterial";
 import { createFloorWithHoles } from "@/lib/floor/createFloorWithHoles";
 import DeathOverlay from "@/components/DeathOverlay";
-import { FLOOR_ALBEDO_TINT } from "@/lib/floor/floorAssets";
+import {
+  FLOOR_ALBEDO_TINT,
+} from "@/lib/floor/floorAssets";
 import { DEATH_FADE_MS, DEATH_MIN_DISPLAY_MS } from "@/lib/floor/floorHoles";
 import { createIndustrialWallMaterial } from "@/lib/wall/createIndustrialWallMaterial";
 import { createArenaPerimeterWalls } from "@/lib/wall/createArenaWalls";
 import { createEastWallCatwalk } from "@/lib/wall/createEastWallCatwalk";
+import { WALL_ALBEDO_TINT } from "@/lib/wall/wallAssets";
+import {
+  CATWALK_DECK_ALBEDO_TINT,
+  CATWALK_EDGE_ALBEDO_TINT,
+} from "@/lib/catwalk/catwalkAssets";
 import {
   createCatwalkDeckMaterial,
   createCatwalkEdgeMaterial,
 } from "@/lib/catwalk/createCatwalkMaterials";
 import { createHazardPillarMaterial } from "@/lib/pillar/createHazardPillarMaterial";
+import { loadCenterEnemy } from "@/lib/enemies/loadCenterEnemy";
 import {
+  createViewWeapon,
+  VIEWMODEL_LAYER_MASK,
+  type ViewWeapon,
+} from "@/lib/weapons/createViewWeapon";
+import {
+  PILLAR_ALBEDO_TINT,
   PILLAR_DIAMETER,
   PILLAR_HEIGHT,
 } from "@/lib/pillar/pillarAssets";
@@ -50,6 +57,7 @@ import { createGameCore, type GameCoreInstance } from "@/lib/gameCore";
 import {
   BINDING_ROWS,
   eventMatchesBinding,
+  isBindingDown,
   syncGameCoreInput,
   type BindingAction,
   type KeyBindingsMap,
@@ -70,6 +78,12 @@ import type { OutdoorLightingTuning } from "@/lib/lighting/outdoorLightingTuning
 import type { FlashlightTuning } from "@/lib/lighting/flashlightTuning";
 import type { MotionBlurTuning } from "@/lib/postProcess/motionBlurTuning";
 import type { GameSettings } from "@/lib/settings";
+import type { PrimaryWeaponId } from "@/lib/hud/weaponHud";
+import type { ViewWeaponTuning } from "@/lib/weapons/viewWeaponTuning";
+import type {
+  RoundDisplayPoseMode,
+  RoundDisplayTuning,
+} from "@/lib/weapons/weaponRoundDisplayTuning";
 import {
   safeExitPointerLock,
   safeRequestPointerLock,
@@ -96,21 +110,26 @@ type FpsSceneProps = Pick<
   | "walkBobEnabled"
   | "walkBobAmplitudeCm"
   | "walkBobDurationSec"
+  | "flyModeEnabled"
   | "showPlayerCollisionFootprint"
-  | "rainEnabled"
-  | "rainIntensity"
 > & {
   bindings: KeyBindingsMap;
   outdoorTuning: OutdoorLightingTuning;
   flashlightTuning: FlashlightTuning;
   motionBlurTuning: MotionBlurTuning;
+  viewWeaponTuning: ViewWeaponTuning;
+  roundDisplayTuning: RoundDisplayTuning;
+  roundDisplayPreview?: { weapon: PrimaryWeaponId; mode: RoundDisplayPoseMode } | null;
   paused: boolean;
   pointerLockBlocked: boolean;
   materialEditMode: boolean;
+  activePrimaryWeapon: PrimaryWeaponId;
   surfaceTuning: SurfaceTuningState;
   onSurfacePick?: (surfaceId: EditableSurfaceId) => void;
   onToggleMaterialEditMode?: () => void;
   onPlayerCoords?: (coords: PlayerCoords) => void;
+  onAimBlend?: (aimBlend: number) => void;
+  onReady?: () => void;
   skyPreviewModeRef?: React.MutableRefObject<
     ((mode: SkyTuningPreviewMode) => void) | null
   >;
@@ -160,6 +179,14 @@ function syncGameCoreSettings(
 const PICK_DRAG_THRESHOLD_PX = 14;
 /** Match GameEngine2 `HIP_FOV` — Babylon default ~46° feels much hotter than GE2 75°. */
 const HIP_FOV_RADIANS = (75 * Math.PI) / 180;
+const ADS_FOV_RADIANS = (41.6 * Math.PI) / 180;
+const AIM_BLEND_IN_SPEED = 22;
+const AIM_BLEND_OUT_SPEED = 11;
+const FLY_SPEED = 10;
+const FLY_FAST_SPEED = 28;
+const LANDING_RAY_TOP = 120;
+const LANDING_RAY_LENGTH = 260;
+const WORLD_LAYER_MASK = 0x0fffffff;
 
 const SCENE_BINDING_ACTIONS: BindingAction[] = BINDING_ROWS.map(
   (row) => row.id,
@@ -169,6 +196,73 @@ function isSceneBindingCode(bindings: KeyBindingsMap, code: string): boolean {
   return SCENE_BINDING_ACTIONS.some((action) =>
     eventMatchesBinding(bindings, action, code),
   );
+}
+
+function syncFlyLookInput(
+  gameCore: GameCoreInstance,
+  bindings: KeyBindingsMap,
+  pressed: ReadonlySet<string>,
+) {
+  gameCore.set_input(
+    false,
+    false,
+    false,
+    false,
+    isBindingDown(bindings, "lookUp", pressed),
+    isBindingDown(bindings, "lookDown", pressed),
+    isBindingDown(bindings, "lookLeft", pressed),
+    isBindingDown(bindings, "lookRight", pressed),
+    false,
+    false,
+    false,
+  );
+}
+
+function updateFlyPosition(
+  camera: FreeCamera,
+  flyPosition: Vector3,
+  bindings: KeyBindingsMap,
+  pressed: ReadonlySet<string>,
+  deltaSeconds: number,
+  scratch: {
+    move: Vector3;
+    forward: Vector3;
+    right: Vector3;
+  },
+) {
+  const speed = isBindingDown(bindings, "sprint", pressed)
+    ? FLY_FAST_SPEED
+    : FLY_SPEED;
+
+  camera.getDirectionToRef(Vector3.Forward(), scratch.forward);
+  camera.getDirectionToRef(Vector3.Right(), scratch.right);
+  scratch.move.set(0, 0, 0);
+
+  if (isBindingDown(bindings, "forward", pressed)) {
+    scratch.move.addInPlace(scratch.forward);
+  }
+  if (isBindingDown(bindings, "backward", pressed)) {
+    scratch.move.subtractInPlace(scratch.forward);
+  }
+  if (isBindingDown(bindings, "strafeRight", pressed)) {
+    scratch.move.addInPlace(scratch.right);
+  }
+  if (isBindingDown(bindings, "strafeLeft", pressed)) {
+    scratch.move.subtractInPlace(scratch.right);
+  }
+  if (isBindingDown(bindings, "jump", pressed)) {
+    scratch.move.y += 1;
+  }
+  if (isBindingDown(bindings, "crouch", pressed)) {
+    scratch.move.y -= 1;
+  }
+
+  if (scratch.move.lengthSquared() <= 0.0001) {
+    return;
+  }
+
+  scratch.move.normalize().scaleInPlace(speed * deltaSeconds);
+  flyPosition.addInPlace(scratch.move);
 }
 
 /** Sky/celestial = 0, arena geometry = 1 so walls paint over sun billboards. */
@@ -187,12 +281,18 @@ export default function FpsScene(props: FpsSceneProps) {
   const outdoorTuningRef = useRef(props.outdoorTuning);
   const flashlightTuningRef = useRef(props.flashlightTuning);
   const motionBlurTuningRef = useRef(props.motionBlurTuning);
+  const viewWeaponTuningRef = useRef(props.viewWeaponTuning);
+  const roundDisplayTuningRef = useRef(props.roundDisplayTuning);
+  const roundDisplayPreviewRef = useRef(props.roundDisplayPreview ?? null);
   const pausedRef = useRef(props.paused);
   const pointerLockBlockedRef = useRef(props.pointerLockBlocked);
   const materialEditModeRef = useRef(props.materialEditMode);
+  const activePrimaryWeaponRef = useRef(props.activePrimaryWeapon);
   const surfaceTuningRef = useRef(props.surfaceTuning);
   const onSurfacePickRef = useRef(props.onSurfacePick);
   const onPlayerCoordsRef = useRef(props.onPlayerCoords);
+  const onAimBlendRef = useRef(props.onAimBlend);
+  const onReadyRef = useRef(props.onReady);
   const onToggleEditModeRef = useRef<(() => void) | null>(null);
   const bindingsRef = useRef(props.bindings);
   const wasPausedRef = useRef(props.paused);
@@ -231,12 +331,18 @@ export default function FpsScene(props: FpsSceneProps) {
     outdoorTuningRef.current = props.outdoorTuning;
     flashlightTuningRef.current = props.flashlightTuning;
     motionBlurTuningRef.current = props.motionBlurTuning;
+    viewWeaponTuningRef.current = props.viewWeaponTuning;
+    roundDisplayTuningRef.current = props.roundDisplayTuning;
+    roundDisplayPreviewRef.current = props.roundDisplayPreview ?? null;
     pausedRef.current = props.paused;
     pointerLockBlockedRef.current = props.pointerLockBlocked;
     materialEditModeRef.current = props.materialEditMode;
+    activePrimaryWeaponRef.current = props.activePrimaryWeapon;
     surfaceTuningRef.current = props.surfaceTuning;
     onSurfacePickRef.current = props.onSurfacePick;
     onPlayerCoordsRef.current = props.onPlayerCoords;
+    onAimBlendRef.current = props.onAimBlend;
+    onReadyRef.current = props.onReady;
     onToggleEditModeRef.current = props.onToggleMaterialEditMode ?? null;
     skyPreviewModeRef.current = props.skyPreviewModeRef;
   });
@@ -280,7 +386,8 @@ export default function FpsScene(props: FpsSceneProps) {
     let outdoorSky: OutdoorSky | null = null;
     let flashlight: PlayerFlashlight | null = null;
     let motionBlur: SceneMotionBlur | null = null;
-    let rain: RainSystem | null = null;
+    let viewWeapon: ViewWeapon | null = null;
+    const landingMeshes: Mesh[] = [];
     const editableMaterials: Partial<Record<EditableSurfaceId, PBRMaterial>> = {};
     let appliedTuningSnapshot = "";
     let appliedOutdoorTuningSnapshot = "";
@@ -306,28 +413,33 @@ export default function FpsScene(props: FpsSceneProps) {
         );
       }
       if (editableMaterials.pillar && tuning.pillar) {
-        applyPillarSurfaceTuning(editableMaterials.pillar, tuning.pillar, {
-          r: 1,
-          g: 1,
-          b: 1,
-        });
+        applyPillarSurfaceTuning(
+          editableMaterials.pillar,
+          tuning.pillar,
+          PILLAR_ALBEDO_TINT,
+        );
       }
       if (editableMaterials.wall && tuning.wall) {
-        applyWallSurfaceTuning(editableMaterials.wall, tuning.wall);
+        applyWallSurfaceTuning(
+          editableMaterials.wall,
+          tuning.wall,
+          WALL_ALBEDO_TINT,
+        );
       }
       if (editableMaterials.catwalkDeck && tuning.catwalkDeck) {
         applyCatwalkDeckSurfaceTuning(
           editableMaterials.catwalkDeck,
           tuning.catwalkDeck,
+          CATWALK_DECK_ALBEDO_TINT,
         );
       }
       if (editableMaterials.catwalkEdge && tuning.catwalkEdge) {
         applyCatwalkEdgeSurfaceTuning(
           editableMaterials.catwalkEdge,
           tuning.catwalkEdge,
+          CATWALK_EDGE_ALBEDO_TINT,
         );
       }
-      applyRainWetnessToFloor(editableMaterials.floor, rain?.fade ?? 0);
     };
 
     void (async () => {
@@ -366,6 +478,7 @@ export default function FpsScene(props: FpsSceneProps) {
       camera.minZ = 0.1;
       camera.maxZ = 10_000;
       camera.fov = HIP_FOV_RADIANS;
+      camera.layerMask = WORLD_LAYER_MASK;
       camera.rotation.x = -gameCore.pitch();
       camera.rotation.y = gameCore.yaw();
       camera.applyGravity = false;
@@ -379,9 +492,20 @@ export default function FpsScene(props: FpsSceneProps) {
       camera.inputs.clear();
       scene.activeCamera = camera;
 
+      const viewWeaponCamera = new FreeCamera(
+        "viewWeaponCamera",
+        camera.position.clone(),
+        scene,
+      );
+      viewWeaponCamera.minZ = 0.01;
+      viewWeaponCamera.maxZ = 100;
+      viewWeaponCamera.fov = camera.fov;
+      viewWeaponCamera.layerMask = VIEWMODEL_LAYER_MASK;
+      viewWeaponCamera.inputs.clear();
+      scene.activeCameras = [camera, viewWeaponCamera];
+
       motionBlur = createMotionBlur(scene, camera, motionBlurTuningRef.current);
       appliedMotionBlurTuningSnapshot = JSON.stringify(motionBlurTuningRef.current);
-      rain = createRainSystem(scene);
 
       outdoorSky = await createOutdoorSky(scene, camera);
       if (disposed || !canvas) {
@@ -399,19 +523,11 @@ export default function FpsScene(props: FpsSceneProps) {
         });
       }
 
-      const [
-        floorMaterial,
-        pillarMaterial,
-        wallMaterial,
-        catwalkDeckMaterial,
-        catwalkEdgeMaterial,
-      ] = await Promise.all([
-        createTileableFloorMaterial(scene),
-        createHazardPillarMaterial(scene),
-        createIndustrialWallMaterial(scene),
-        createCatwalkDeckMaterial(scene),
-        createCatwalkEdgeMaterial(scene),
-      ]);
+      const floorMaterial = createTileableFloorMaterial(scene);
+      const pillarMaterial = createHazardPillarMaterial(scene);
+      const wallMaterial = createIndustrialWallMaterial(scene);
+      const catwalkDeckMaterial = createCatwalkDeckMaterial(scene);
+      const catwalkEdgeMaterial = createCatwalkEdgeMaterial(scene);
       if (disposed || !canvas) {
         return;
       }
@@ -450,12 +566,37 @@ export default function FpsScene(props: FpsSceneProps) {
       for (const rail of eastCatwalk.slice(1)) {
         tagEditableSurface(rail, "catwalkEdge");
       }
-      for (const mesh of [platform, pillar, ...arenaStructures]) {
+      landingMeshes.push(platform, eastCatwalk[0]);
+
+      const [centerEnemyMeshes, loadedViewWeapon] = await Promise.all([
+        loadCenterEnemy(scene),
+        createViewWeapon(scene),
+      ]);
+      viewWeapon = loadedViewWeapon;
+      if (disposed || !canvas) {
+        return;
+      }
+
+      for (const mesh of [
+        platform,
+        pillar,
+        ...arenaStructures,
+        ...centerEnemyMeshes,
+      ]) {
         mesh.renderingGroupId = WORLD_RENDERING_GROUP;
       }
-      const shadowReceivers = [platform, pillar, ...arenaStructures];
+      const shadowReceivers = [
+        platform,
+        pillar,
+        ...arenaStructures,
+        ...centerEnemyMeshes,
+      ];
       /** Floor receives only — casting from the deck onto itself breaks sun/moon shadows. */
-      const shadowCasters = [pillar, ...arenaStructures];
+      const shadowCasters = [
+        pillar,
+        ...arenaStructures,
+        ...centerEnemyMeshes,
+      ];
 
       const playerCollider = MeshBuilder.CreateSphere(
         "playerCollisionProbe",
@@ -485,7 +626,6 @@ export default function FpsScene(props: FpsSceneProps) {
         outdoorSky.shadows.addCaster(mesh);
       }
       outdoorSky.excludeMeshesFromFillLights(arenaWalls);
-      let fillExcludesWetFloor = false;
       flashlight = createPlayerFlashlight(scene, shadowReceivers);
       flashlight.applyTuning(flashlightTuningRef.current);
       appliedFlashlightTuningSnapshot = JSON.stringify(flashlightTuningRef.current);
@@ -496,12 +636,14 @@ export default function FpsScene(props: FpsSceneProps) {
         return;
       }
       const worldScene = scene;
+      onReadyRef.current?.();
 
       let editPointerActive = false;
       let editPointerDownX = 0;
       let editPointerDownY = 0;
       let editLookAnchorX = 0;
       let editLookAnchorY = 0;
+      let aimHeld = false;
       const pressedCodes = new Set<string>();
 
       const syncInput = () => {
@@ -622,6 +764,7 @@ export default function FpsScene(props: FpsSceneProps) {
       };
 
       const onWindowBlur = () => {
+        aimHeld = false;
         if (pressedCodes.size === 0) {
           return;
         }
@@ -652,6 +795,33 @@ export default function FpsScene(props: FpsSceneProps) {
         gameCore?.add_mouse_delta(dx, dy);
       };
 
+      const onMouseDown = (event: MouseEvent) => {
+        if (event.button !== 2) {
+          return;
+        }
+        if (
+          pausedRef.current ||
+          materialEditModeRef.current ||
+          deathVisibleRef.current
+        ) {
+          return;
+        }
+        aimHeld = true;
+        event.preventDefault();
+      };
+
+      const onMouseUp = (event: MouseEvent) => {
+        if (event.button !== 2) {
+          return;
+        }
+        aimHeld = false;
+        event.preventDefault();
+      };
+
+      const onContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+      };
+
       const onCanvasClick = () => {
         if (
           pausedRef.current ||
@@ -674,8 +844,11 @@ export default function FpsScene(props: FpsSceneProps) {
       window.addEventListener("keyup", onKeyUp);
       window.addEventListener("blur", onWindowBlur);
       window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mousedown", onMouseDown);
+      window.addEventListener("mouseup", onMouseUp);
       window.addEventListener("resize", handleResize);
       canvas.addEventListener("click", onCanvasClick);
+      canvas.addEventListener("contextmenu", onContextMenu);
 
       registerCleanup(() => {
         worldScene.onPointerObservable.remove(pointerObserver);
@@ -683,15 +856,42 @@ export default function FpsScene(props: FpsSceneProps) {
         window.removeEventListener("keyup", onKeyUp);
         window.removeEventListener("blur", onWindowBlur);
         window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mousedown", onMouseDown);
+        window.removeEventListener("mouseup", onMouseUp);
         window.removeEventListener("resize", handleResize);
         canvas.removeEventListener("click", onCanvasClick);
+        canvas.removeEventListener("contextmenu", onContextMenu);
       });
 
       let prevMotionYaw = gameCore.yaw();
       let prevMotionPitch = gameCore.pitch() + gameCore.walk_bob_pitch();
       const previousCorePosition = new Vector3();
       const collisionDisplacement = new Vector3();
+      const flyPosition = new Vector3();
+      const flyScratch = {
+        move: new Vector3(),
+        forward: new Vector3(),
+        right: new Vector3(),
+      };
+      const weaponPreviousPosition = camera.position.clone();
+      let aimFovBlend = 0;
+      let aimBobBlend = 0;
+      let flyModeActive = false;
       let collisionBlockedThisFrame = false;
+
+      const resolveLandingEyeY = (
+        x: number,
+        currentY: number,
+        z: number,
+        eyeHeight: number,
+      ) => {
+        const rayOrigin = new Vector3(x, Math.max(currentY, LANDING_RAY_TOP), z);
+        const ray = new Ray(rayOrigin, Vector3.Down(), LANDING_RAY_LENGTH);
+        const hit = worldScene.pickWithRay(ray, (mesh) =>
+          landingMeshes.includes(mesh as Mesh),
+        );
+        return (hit?.pickedPoint?.y ?? 0) + eyeHeight;
+      };
 
       registerCleanup(() => collisionFootprintDebug.dispose());
 
@@ -714,44 +914,89 @@ export default function FpsScene(props: FpsSceneProps) {
         }
 
         const deltaSeconds = engine!.getDeltaTime() / 1000;
-        if (!pausedRef.current && !deathVisibleRef.current) {
-          syncGameCoreInput(gameCore, bindingsRef.current, pressedCodes);
-          previousCorePosition.set(
-            gameCore.position_x(),
-            gameCore.position_y(),
-            gameCore.position_z(),
+        const flyModeRequested =
+          settingsRef.current.flyModeEnabled &&
+          !materialEditModeRef.current &&
+          !deathVisibleRef.current;
+
+        if (flyModeRequested && !flyModeActive) {
+          flyModeActive = true;
+          flyPosition.copyFrom(camera.position);
+          camera.checkCollisions = false;
+          gameCore.clear_input();
+        } else if (!flyModeRequested && flyModeActive) {
+          flyModeActive = false;
+          camera.checkCollisions = true;
+          gameCore.sync_player_position(
+            flyPosition.x,
+            resolveLandingEyeY(
+              flyPosition.x,
+              flyPosition.y,
+              flyPosition.z,
+              gameCore.eye_height(),
+            ),
+            flyPosition.z,
           );
-          gameCore.tick(deltaSeconds);
-          collisionBlockedThisFrame = false;
+          gameCore.clear_input();
+        }
 
-          if (!gameCore.falling_through_hole()) {
-            playerCollider.position.copyFrom(previousCorePosition);
-            collisionDisplacement.set(
-              gameCore.position_x() - previousCorePosition.x,
+        if (!pausedRef.current && !deathVisibleRef.current) {
+          if (flyModeActive) {
+            syncFlyLookInput(gameCore, bindingsRef.current, pressedCodes);
+            gameCore.tick(deltaSeconds);
+            camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
+              gameCore.yaw(),
+              -gameCore.pitch(),
               0,
-              gameCore.position_z() - previousCorePosition.z,
             );
-            playerCollider.moveWithCollisions(collisionDisplacement);
-            collisionBlockedThisFrame = collisionTrimmedMove(
-              previousCorePosition,
-              collisionDisplacement,
-              playerCollider.position,
+            updateFlyPosition(
+              camera,
+              flyPosition,
+              bindingsRef.current,
+              pressedCodes,
+              deltaSeconds,
+              flyScratch,
             );
-            gameCore.sync_player_position(
-              playerCollider.position.x,
+            collisionBlockedThisFrame = false;
+          } else {
+            syncGameCoreInput(gameCore, bindingsRef.current, pressedCodes);
+            previousCorePosition.set(
+              gameCore.position_x(),
               gameCore.position_y(),
-              playerCollider.position.z,
+              gameCore.position_z(),
             );
-            gameCore.try_begin_hole_fall();
-          }
+            gameCore.tick(deltaSeconds);
+            collisionBlockedThisFrame = false;
 
-          if (gameCore.should_die_from_fall()) {
-            const now = performance.now();
-            if (gameCore.apply_player_death("fall", now, DEATH_MIN_DISPLAY_MS)) {
-              safeExitPointerLock();
-              setDeathReason(gameCore.death_reason());
-              setDeathMinDisplayEnd(gameCore.death_min_display_end_ms());
-              setDeathVisible(true);
+            if (!gameCore.falling_through_hole()) {
+              playerCollider.position.copyFrom(previousCorePosition);
+              collisionDisplacement.set(
+                gameCore.position_x() - previousCorePosition.x,
+                0,
+                gameCore.position_z() - previousCorePosition.z,
+              );
+              playerCollider.moveWithCollisions(collisionDisplacement);
+              collisionBlockedThisFrame = collisionTrimmedMove(
+                previousCorePosition,
+                collisionDisplacement,
+                playerCollider.position,
+              );
+              gameCore.sync_player_position(
+                playerCollider.position.x,
+                gameCore.position_y(),
+                playerCollider.position.z,
+              );
+              gameCore.try_begin_hole_fall();
+            }
+
+            if (gameCore.should_die_from_fall()) {
+              const now = performance.now();
+              if (gameCore.apply_player_death("fall", now, DEATH_MIN_DISPLAY_MS)) {
+                safeExitPointerLock();
+                setDeathReason(gameCore.death_reason());
+                setDeathMinDisplayEnd(gameCore.death_min_display_end_ms());
+                setDeathVisible(true);
+              }
             }
           }
 
@@ -759,22 +1004,6 @@ export default function FpsScene(props: FpsSceneProps) {
         }
 
         outdoorSky?.update(camera);
-        if (rain) {
-          updateRainSystem(rain, camera, deltaSeconds, {
-            enabled: settingsRef.current.rainEnabled,
-            intensity: settingsRef.current.rainIntensity,
-          });
-          applyRainWetnessToFloor(editableMaterials.floor, rain.fade);
-          canvas.style.filter = rainCanvasFilter(rain.fade);
-
-          const wetFloor = floorWetnessNeedsFillExclusion(rain.fade);
-          if (wetFloor !== fillExcludesWetFloor) {
-            fillExcludesWetFloor = wetFloor;
-            outdoorSky?.excludeMeshesFromFillLights(
-              wetFloor ? [platform, ...arenaWalls] : arenaWalls,
-            );
-          }
-        }
         const outdoorTuningJson = JSON.stringify(outdoorTuningRef.current);
         if (outdoorTuningJson !== appliedOutdoorTuningSnapshot) {
           outdoorSky?.applyOutdoorTuning(outdoorTuningRef.current);
@@ -793,18 +1022,60 @@ export default function FpsScene(props: FpsSceneProps) {
           appliedMotionBlurTuningSnapshot = motionBlurTuningJson;
         }
 
-        camera.position.x = gameCore.position_x();
-        camera.position.y = gameCore.position_y() + gameCore.walk_bob_y();
-        camera.position.z = gameCore.position_z();
-        // Yaw-pitch-roll (YXZ) — same as GE2; separate Euler axes skew roll when looking around.
-        camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
-          gameCore.yaw(),
-          -(gameCore.pitch() + gameCore.walk_bob_pitch()),
-          gameCore.walk_bob_roll(),
-        );
+        const wantsAim =
+          aimHeld || isBindingDown(bindingsRef.current, "aim", pressedCodes);
+        const aimTarget = wantsAim ? 1 : 0;
+        const rifleAimTarget =
+          activePrimaryWeaponRef.current === "rifle" && wantsAim ? 1 : 0;
+        const aimBlendSpeed =
+          rifleAimTarget > aimFovBlend ? AIM_BLEND_IN_SPEED : AIM_BLEND_OUT_SPEED;
+        aimFovBlend +=
+          (rifleAimTarget - aimFovBlend) *
+          (1 - Math.exp(-aimBlendSpeed * deltaSeconds));
+        if (Math.abs(rifleAimTarget - aimFovBlend) < 0.001) {
+          aimFovBlend = rifleAimTarget;
+        }
+        const aimBobSpeed =
+          aimTarget > aimBobBlend ? AIM_BLEND_IN_SPEED : AIM_BLEND_OUT_SPEED;
+        aimBobBlend +=
+          (aimTarget - aimBobBlend) *
+          (1 - Math.exp(-aimBobSpeed * deltaSeconds));
+        if (Math.abs(aimTarget - aimBobBlend) < 0.001) {
+          aimBobBlend = aimTarget;
+        }
+        camera.fov =
+          HIP_FOV_RADIANS + (ADS_FOV_RADIANS - HIP_FOV_RADIANS) * aimFovBlend;
+        onAimBlendRef.current?.(aimFovBlend);
+
+        if (flyModeActive) {
+          camera.position.copyFrom(flyPosition);
+          camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
+            gameCore.yaw(),
+            -gameCore.pitch(),
+            0,
+          );
+        } else {
+          const walkBobScale = 1 - aimBobBlend;
+          camera.position.x = gameCore.position_x();
+          camera.position.y =
+            gameCore.position_y() + gameCore.walk_bob_y() * walkBobScale;
+          camera.position.z = gameCore.position_z();
+          // Yaw-pitch-roll (YXZ) — same as GE2; separate Euler axes skew roll when looking around.
+          camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
+            gameCore.yaw(),
+            -(gameCore.pitch() + gameCore.walk_bob_pitch() * walkBobScale),
+            gameCore.walk_bob_roll() * walkBobScale,
+          );
+        }
+        viewWeaponCamera.position.copyFrom(camera.position);
+        viewWeaponCamera.rotationQuaternion = camera.rotationQuaternion?.clone() ?? null;
+        viewWeaponCamera.fov = camera.fov;
 
         const lookYaw = gameCore.yaw();
-        const lookPitch = gameCore.pitch() + gameCore.walk_bob_pitch();
+        const lookBobScale = 1 - aimBobBlend;
+        const lookPitch = flyModeActive
+          ? gameCore.pitch()
+          : gameCore.pitch() + gameCore.walk_bob_pitch() * lookBobScale;
         if (!pausedRef.current) {
           motionBlur?.setCameraMotion(
             lookYaw - prevMotionYaw,
@@ -824,16 +1095,32 @@ export default function FpsScene(props: FpsSceneProps) {
           );
         }
 
+        const weaponMoveSpeed = pausedRef.current
+          ? 0
+          : Vector3.Distance(camera.position, weaponPreviousPosition) /
+            Math.max(deltaSeconds, 1 / 120);
+        weaponPreviousPosition.copyFrom(camera.position);
+        viewWeapon?.setActiveWeapon(activePrimaryWeaponRef.current);
+        viewWeapon?.update(camera, {
+          deltaSeconds,
+          moveSpeed: weaponMoveSpeed,
+          aimTarget,
+          tuning: viewWeaponTuningRef.current,
+          roundDisplayTuning: roundDisplayTuningRef.current,
+          roundDisplayPreview: roundDisplayPreviewRef.current,
+          visible: !deathVisibleRef.current && !materialEditModeRef.current,
+        });
+
         onPlayerCoordsRef.current?.({
-          x: gameCore.position_x(),
-          y: gameCore.position_y(),
-          z: gameCore.position_z(),
+          x: flyModeActive ? flyPosition.x : gameCore.position_x(),
+          y: flyModeActive ? flyPosition.y : gameCore.position_y(),
+          z: flyModeActive ? flyPosition.z : gameCore.position_z(),
           yaw: gameCore.yaw(),
           pitch: gameCore.pitch(),
         });
 
         const showCollisionFootprint =
-          settingsRef.current.showPlayerCollisionFootprint;
+          settingsRef.current.showPlayerCollisionFootprint && !flyModeActive;
         collisionFootprintDebug.setEnabled(showCollisionFootprint);
         if (showCollisionFootprint) {
           collisionFootprintDebug.sync(
@@ -859,9 +1146,8 @@ export default function FpsScene(props: FpsSceneProps) {
 
       outdoorSky?.dispose();
       motionBlur?.dispose();
-      disposeRainSystem(rain);
-      canvas.style.filter = "";
       flashlight?.dispose();
+      viewWeapon?.dispose();
       scene?.dispose();
       engine?.dispose();
       gameCore?.free();

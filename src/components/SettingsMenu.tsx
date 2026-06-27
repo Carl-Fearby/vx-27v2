@@ -7,18 +7,26 @@ import MotionBlurTuningSection from "@/components/MotionBlurTuningSection";
 import HudWeaponTuningSection from "@/components/HudWeaponTuningSection";
 import SkyTuningSection from "@/components/SkyTuningSection";
 import TorchTuningSection from "@/components/TorchTuningSection";
+import RoundDisplayTuningSection from "@/components/RoundDisplayTuningSection";
+import ViewWeaponTuningSection from "@/components/ViewWeaponTuningSection";
 import type { KeyBindingsMap } from "@/lib/keyBindings";
 import type { HudWeaponTuning } from "@/lib/hud/hudWeaponTuning";
+import type { PrimaryWeaponId } from "@/lib/hud/weaponHud";
 import type { SkyTuningPreviewMode } from "@/lib/lighting/createOutdoorSky";
 import type { OutdoorLightingTuning } from "@/lib/lighting/outdoorLightingTuning";
 import type { FlashlightTuning } from "@/lib/lighting/flashlightTuning";
 import type { MotionBlurTuning } from "@/lib/postProcess/motionBlurTuning";
-import {
-  RAIN_INTENSITY_MAX,
-  RAIN_INTENSITY_MIN,
-  RAIN_INTENSITY_STEP,
-} from "@/lib/weather/rain";
 import type { GameSettings } from "@/lib/settings";
+import type {
+  ViewWeaponPose,
+  ViewWeaponPoseMode,
+  ViewWeaponTuning,
+} from "@/lib/weapons/viewWeaponTuning";
+import type {
+  RoundDisplayPoseMode,
+  RoundDisplayTuning,
+  WeaponRoundDisplayPose,
+} from "@/lib/weapons/weaponRoundDisplayTuning";
 import {
   formatPlayerCoordsJson,
   type PlayerCoords,
@@ -43,6 +51,23 @@ type SettingsMenuProps = {
   hudWeaponTuning?: HudWeaponTuning;
   onHudWeaponTuningChange?: (patch: Partial<HudWeaponTuning>) => void;
   onHudWeaponTuningReset?: () => void;
+  viewWeaponTuning?: ViewWeaponTuning;
+  onViewWeaponTuningChange?: (
+    weapon: PrimaryWeaponId,
+    mode: ViewWeaponPoseMode,
+    patch: Partial<ViewWeaponPose>,
+  ) => void;
+  onViewWeaponTuningReset?: () => void;
+  roundDisplayTuning?: RoundDisplayTuning;
+  onRoundDisplayTuningChange?: (
+    weapon: PrimaryWeaponId,
+    mode: RoundDisplayPoseMode,
+    patch: Partial<WeaponRoundDisplayPose>,
+  ) => void;
+  onRoundDisplayTuningReset?: () => void;
+  onRoundDisplayPreviewChange?: (
+    preview: { weapon: PrimaryWeaponId; mode: RoundDisplayPoseMode } | null,
+  ) => void;
   playerCoords?: PlayerCoords | null;
   getPlayerCoords?: () => PlayerCoords | null;
   onSectionActiveChange?: (active: boolean) => void;
@@ -58,12 +83,14 @@ type SectionId =
   | "keybindings"
   | "visuals"
   | "hud-visibility"
-  | "rain"
   | "motionblur"
   | "hud-weapon"
+  | "view-weapon"
+  | "ammo-display"
   | "development"
   | "player-position"
   | "local-storage"
+  | "fly"
   | "bob"
   | "sky"
   | "torch"
@@ -117,12 +144,6 @@ const HUD_VISIBILITY_SECTION: SectionConfig = {
   description: "Show or hide the in-game HUD",
 };
 
-const RAIN_SECTION: SectionConfig = {
-  id: "rain",
-  title: "Rain",
-  description: "Storm grade and falling rain",
-};
-
 const MOTION_BLUR_SECTION: SectionConfig = {
   id: "motionblur",
   title: "Motion blur",
@@ -133,6 +154,18 @@ const HUD_WEAPON_SECTION: SectionConfig = {
   id: "hud-weapon",
   title: "HUD weapon opacity",
   description: "Primary and secondary weapon frames",
+};
+
+const VIEW_WEAPON_SECTION: SectionConfig = {
+  id: "view-weapon",
+  title: "Weapon pose tuning",
+  description: "First-person hip and ADS alignment",
+};
+
+const AMMO_DISPLAY_SECTION: SectionConfig = {
+  id: "ammo-display",
+  title: "Ammo display tuning",
+  description: "Gun-mounted round counter placement",
 };
 
 const DEVELOPMENT_SECTION: SectionConfig = {
@@ -169,6 +202,12 @@ const LOCAL_STORAGE_SECTION: SectionConfig = {
   id: "local-storage",
   title: "Local Storage",
   description: "Copy or delete saved JSON data",
+};
+
+const FLY_SECTION: SectionConfig = {
+  id: "fly",
+  title: "Fly",
+  description: "Free camera level inspection",
 };
 
 const DEBUG_SECTION: SectionConfig = {
@@ -293,36 +332,6 @@ function HudVisibilitySection({
         hint="Display health, ammo, compass, and weapon stacks"
         checked={settings.hudVisible}
         onChange={(checked) => onChange({ hudVisible: checked })}
-      />
-    </div>
-  );
-}
-
-function RainSection({
-  settings,
-  onChange,
-}: {
-  settings: GameSettings;
-  onChange: (patch: Partial<GameSettings>) => void;
-}) {
-  return (
-    <div className="settings-list">
-      <SettingsToggle
-        label="Rain"
-        hint="Darken and desaturate the level with falling rain"
-        checked={settings.rainEnabled}
-        onChange={(checked) => onChange({ rainEnabled: checked })}
-      />
-      <SettingsSlider
-        label="Rain intensity"
-        hint="GE2 range: drizzle to heavy storm"
-        min={RAIN_INTENSITY_MIN}
-        max={RAIN_INTENSITY_MAX}
-        step={RAIN_INTENSITY_STEP}
-        value={settings.rainIntensity}
-        suffix="x"
-        decimals={2}
-        onChange={(value) => onChange({ rainIntensity: value })}
       />
     </div>
   );
@@ -517,6 +526,25 @@ function LocalStorageSection() {
   );
 }
 
+function FlySection({
+  settings,
+  onChange,
+}: {
+  settings: GameSettings;
+  onChange: (patch: Partial<GameSettings>) => void;
+}) {
+  return (
+    <div className="settings-list">
+      <SettingsToggle
+        label="Fly mode"
+        hint="Free camera movement; turning it off drops the player to the ground below"
+        checked={settings.flyModeEnabled}
+        onChange={(checked) => onChange({ flyModeEnabled: checked })}
+      />
+    </div>
+  );
+}
+
 function DebugSection({
   settings,
   onChange,
@@ -678,6 +706,13 @@ export default function SettingsMenu({
   hudWeaponTuning,
   onHudWeaponTuningChange,
   onHudWeaponTuningReset,
+  viewWeaponTuning,
+  onViewWeaponTuningChange,
+  onViewWeaponTuningReset,
+  roundDisplayTuning,
+  onRoundDisplayTuningChange,
+  onRoundDisplayTuningReset,
+  onRoundDisplayPreviewChange,
   playerCoords,
   getPlayerCoords,
   onSectionActiveChange,
@@ -697,6 +732,15 @@ export default function SettingsMenu({
   const hasHudWeapon = Boolean(
     hudWeaponTuning && onHudWeaponTuningChange && onHudWeaponTuningReset,
   );
+  const hasViewWeapon = Boolean(
+    viewWeaponTuning && onViewWeaponTuningChange && onViewWeaponTuningReset,
+  );
+  const hasRoundDisplay = Boolean(
+    roundDisplayTuning &&
+      onRoundDisplayTuningChange &&
+      onRoundDisplayTuningReset &&
+      onRoundDisplayPreviewChange,
+  );
 
   const topSections = [
     AUDIO_SECTION,
@@ -712,16 +756,18 @@ export default function SettingsMenu({
   ];
   const visualsSections = [
     HUD_VISIBILITY_SECTION,
-    RAIN_SECTION,
     ...(hasMotionBlur ? [MOTION_BLUR_SECTION] : []),
   ];
   const developmentSections = [
     ...(hasDebug ? [PLAYER_POSITION_SECTION] : []),
     LOCAL_STORAGE_SECTION,
+    FLY_SECTION,
     BOB_SECTION,
     SKY_SECTION,
     ...(hasTorch ? [TORCH_SECTION] : []),
     ...(hasHudWeapon ? [HUD_WEAPON_SECTION] : []),
+    ...(hasViewWeapon ? [VIEW_WEAPON_SECTION] : []),
+    ...(hasRoundDisplay ? [AMMO_DISPLAY_SECTION] : []),
     ...(hasDebug ? [DEBUG_SECTION] : []),
   ];
 
@@ -755,6 +801,9 @@ export default function SettingsMenu({
   };
 
   const closeDevWindow = (id: SectionId) => {
+    if (id === "ammo-display") {
+      onRoundDisplayPreviewChange?.(null);
+    }
     setOpenDevWindows((current) => current.filter((sectionId) => sectionId !== id));
   };
 
@@ -792,8 +841,6 @@ export default function SettingsMenu({
         return (
           <HudVisibilitySection settings={settings} onChange={onChange} />
         );
-      case "rain":
-        return <RainSection settings={settings} onChange={onChange} />;
       case "player-position":
         return (
           <PlayerPositionSection
@@ -804,6 +851,8 @@ export default function SettingsMenu({
         );
       case "local-storage":
         return <LocalStorageSection />;
+      case "fly":
+        return <FlySection settings={settings} onChange={onChange} />;
       case "bob":
         return <BobSection settings={settings} onChange={onChange} />;
       case "motionblur":
@@ -848,6 +897,28 @@ export default function SettingsMenu({
             tuning={hudWeaponTuning}
             onChange={onHudWeaponTuningChange}
             onReset={onHudWeaponTuningReset}
+          />
+        ) : null;
+      case "view-weapon":
+        return viewWeaponTuning &&
+          onViewWeaponTuningChange &&
+          onViewWeaponTuningReset ? (
+          <ViewWeaponTuningSection
+            tuning={viewWeaponTuning}
+            onChange={onViewWeaponTuningChange}
+            onReset={onViewWeaponTuningReset}
+          />
+        ) : null;
+      case "ammo-display":
+        return roundDisplayTuning &&
+          onRoundDisplayTuningChange &&
+          onRoundDisplayTuningReset &&
+          onRoundDisplayPreviewChange ? (
+          <RoundDisplayTuningSection
+            tuning={roundDisplayTuning}
+            onChange={onRoundDisplayTuningChange}
+            onReset={onRoundDisplayTuningReset}
+            onPreviewChange={onRoundDisplayPreviewChange}
           />
         ) : null;
       case "debug":

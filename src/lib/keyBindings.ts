@@ -3,6 +3,7 @@ export type BindingAction =
   | "backward"
   | "strafeLeft"
   | "strafeRight"
+  | "aim"
   | "jump"
   | "crouch"
   | "sprint"
@@ -24,8 +25,9 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
   backward: "KeyS",
   strafeLeft: "KeyA",
   strafeRight: "KeyD",
+  aim: "KeyZ",
   jump: "Space",
-  crouch: "KeyZ",
+  crouch: ["ControlLeft", "ControlRight"],
   sprint: ["ShiftLeft", "ShiftRight"],
   openSettings: "",
   materialEdit: "KeyE",
@@ -42,6 +44,7 @@ export const BINDING_ROWS: Array<{ id: BindingAction; label: string }> = [
   { id: "backward", label: "Move backward" },
   { id: "strafeLeft", label: "Strafe left" },
   { id: "strafeRight", label: "Strafe right" },
+  { id: "aim", label: "Aim down sights" },
   { id: "jump", label: "Jump" },
   { id: "crouch", label: "Crouch" },
   { id: "sprint", label: "Run" },
@@ -124,6 +127,11 @@ export function loadKeyBindings(): KeyBindingsMap {
       } else if (Array.isArray(value) && value.every((code) => typeof code === "string")) {
         merged[row.id] = value;
       }
+    }
+    if (merged.crouch === "KeyZ") {
+      merged.crouch = DEFAULT_BINDINGS.crouch;
+      merged.aim = DEFAULT_BINDINGS.aim;
+      saveKeyBindings(merged);
     }
     return merged;
   } catch {

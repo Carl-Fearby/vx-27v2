@@ -1,9 +1,5 @@
 import { Mesh, MeshBuilder, PBRMaterial, Scene } from "@babylonjs/core";
 import {
-  applyCatwalkDeckWorldUvs,
-  applyCatwalkEdgeWorldUvs,
-} from "@/lib/catwalk/applyCatwalkWorldUvs";
-import {
   CATWALK_DECK_THICKNESS,
   CATWALK_RAIL_HEIGHT,
   CATWALK_RAIL_THICKNESS,
@@ -13,7 +9,6 @@ import {
   WALL_OUTER_EAST_X,
   WALL_OUTER_NORTH_Z,
   WALL_OUTER_SOUTH_Z,
-  WALL_PLATFORM_HALF,
 } from "@/lib/wall/wallAssets";
 
 function createCatwalkBox(
@@ -26,7 +21,6 @@ function createCatwalkBox(
   centerX: number,
   centerY: number,
   centerZ: number,
-  applyWorldUvs: (mesh: Mesh) => void,
   walkable = false,
 ): Mesh {
   const mesh = MeshBuilder.CreateBox(name, { width, height, depth }, scene);
@@ -34,7 +28,6 @@ function createCatwalkBox(
   mesh.material = material;
   mesh.checkCollisions = walkable;
   mesh.receiveShadows = true;
-  applyWorldUvs(mesh);
   return mesh;
 }
 
@@ -69,7 +62,6 @@ export function createEastWallCatwalk(
     deckCenterX,
     deckCenterY,
     deckCenterZ,
-    applyCatwalkDeckWorldUvs,
     true,
   );
 
@@ -83,7 +75,6 @@ export function createEastWallCatwalk(
     westEdgeX + railHalf,
     railCenterY,
     deckCenterZ,
-    applyCatwalkEdgeWorldUvs,
   );
 
   const railEast = createCatwalkBox(
@@ -96,7 +87,6 @@ export function createEastWallCatwalk(
     eastEdgeX - railHalf,
     railCenterY,
     deckCenterZ,
-    applyCatwalkEdgeWorldUvs,
   );
 
   const railNorth = createCatwalkBox(
@@ -109,7 +99,6 @@ export function createEastWallCatwalk(
     deckCenterX,
     railCenterY,
     WALL_OUTER_NORTH_Z + railHalf,
-    applyCatwalkEdgeWorldUvs,
   );
 
   const railSouth = createCatwalkBox(
@@ -122,7 +111,6 @@ export function createEastWallCatwalk(
     deckCenterX,
     railCenterY,
     WALL_OUTER_SOUTH_Z - railHalf,
-    applyCatwalkEdgeWorldUvs,
   );
 
   return [deck, railWest, railEast, railNorth, railSouth];

@@ -30,12 +30,12 @@ export type OutdoorLightingTuning = {
   hemiNight: HemiTuning;
 };
 
-export const SUN_INTENSITY_DEFAULT = 8;
+export const SUN_INTENSITY_DEFAULT = 1.6;
 export const SUN_INTENSITY_MIN = 0;
 export const SUN_INTENSITY_MAX = 10;
 export const SUN_INTENSITY_STEP = 0.05;
 
-export const SUN_TEMPERATURE_DEFAULT = 6400;
+export const SUN_TEMPERATURE_DEFAULT = 9000;
 export const SUN_TEMPERATURE_MIN = 3500;
 export const SUN_TEMPERATURE_MAX = 9000;
 export const SUN_TEMPERATURE_STEP = 100;
@@ -64,12 +64,12 @@ export const MOON_TEMPERATURE_MIN = 3500;
 export const MOON_TEMPERATURE_MAX = 50000;
 export const MOON_TEMPERATURE_STEP = 100;
 
-export const SHELTERED_HEMI_MUL_DEFAULT = 1.26;
+export const SHELTERED_HEMI_MUL_DEFAULT = 1.34;
 export const SHELTERED_HEMI_MUL_MIN = 0.4;
 export const SHELTERED_HEMI_MUL_MAX = 3;
 export const SHELTERED_HEMI_MUL_STEP = 0.02;
 
-export const SHADOW_DEPTH_DEFAULT = 0.97;
+export const SHADOW_DEPTH_DEFAULT = 1;
 export const SHADOW_DEPTH_MIN = 0;
 export const SHADOW_DEPTH_MAX = 1;
 export const SHADOW_DEPTH_STEP = 0.01;
@@ -83,8 +83,8 @@ export const HEMI_INTENSITY_MAX = 5;
 export const HEMI_INTENSITY_STEP = 0.01;
 
 export const DEFAULT_HEMI_DAY: HemiTuning = {
-  temperature: 7700,
-  intensity: 1.2,
+  temperature: 13000,
+  intensity: 0.27,
 };
 
 export const DEFAULT_OUTDOOR_LIGHTING: OutdoorLightingTuning = {
@@ -109,7 +109,7 @@ let sessionOutdoorLighting: OutdoorLightingTuning = {
 };
 
 /** Bumps when defaults change — clears stale in-memory session values on hot reload. */
-const OUTDOOR_LIGHTING_SCHEMA_VERSION = 7;
+const OUTDOOR_LIGHTING_SCHEMA_VERSION = 8;
 let loadedOutdoorLightingVersion = 0;
 
 function ensureOutdoorLightingSchema() {

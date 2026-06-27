@@ -3,17 +3,25 @@ import {
   SKY_DAY_URL,
   SKY_NIGHT_URL,
 } from "@/lib/lighting/tuning";
-import { FLOOR_PRELOAD_URLS } from "@/lib/floor/floorAssets";
-import { PILLAR_PRELOAD_URLS } from "@/lib/pillar/pillarAssets";
+import { CENTER_ENEMY_MODEL_URL } from "@/lib/enemies/enemyAssets";
+import {
+  GE2_PLAYER_WEAPON_MODELS,
+} from "@/lib/assets/ge2ImportedAssets";
 
 const PRELOAD_STEPS = [
   { label: "Game core", weight: 0.2 },
   { label: "Engine", weight: 0.2 },
-  { label: "World assets", weight: 0.6 },
+  { label: "World assets", weight: 0.25 },
+  { label: "Enemy model", weight: 0.2 },
+  { label: "View weapons", weight: 0.15 },
 ] as const;
 
-const SKY_ASSETS = [SKY_DAY_URL, SKY_NIGHT_URL, MOON_TEXTURE_URL];
-const WORLD_ASSETS = [...SKY_ASSETS, ...FLOOR_PRELOAD_URLS, ...PILLAR_PRELOAD_URLS];
+const WORLD_ASSETS = [SKY_DAY_URL, SKY_NIGHT_URL, MOON_TEXTURE_URL];
+const MODEL_ASSETS = [CENTER_ENEMY_MODEL_URL];
+const VIEW_WEAPON_ASSETS = [
+  GE2_PLAYER_WEAPON_MODELS.pistol,
+  GE2_PLAYER_WEAPON_MODELS.rifle,
+];
 
 async function preloadGameCore(
   onDownloadProgress: (ratio: number) => void,
@@ -47,16 +55,21 @@ async function preloadGameCore(
 }
 
 async function preloadBabylon(): Promise<void> {
-  await import("@babylonjs/core");
+  await Promise.all([
+    import("@babylonjs/core"),
+    import("@babylonjs/loaders/glTF"),
+  ]);
 }
 
-async function preloadWorldAssets(
+async function preloadFetchAssets(
+  urls: readonly string[],
+  errorMessage: string,
   onDownloadProgress: (ratio: number) => void,
 ): Promise<void> {
-  const responses = await Promise.all(WORLD_ASSETS.map((url) => fetch(url)));
+  const responses = await Promise.all(urls.map((url) => fetch(url)));
 
   if (responses.some((response) => !response.ok)) {
-    throw new Error("Failed to preload world assets");
+    throw new Error(errorMessage);
   }
 
   const totalBytes = responses.reduce(
@@ -72,6 +85,26 @@ async function preloadWorldAssets(
       totalBytes > 0 ? Math.min(loadedBytes / totalBytes, 1) : 1,
     );
   }
+}
+
+async function preloadWorldAssets(
+  onDownloadProgress: (ratio: number) => void,
+): Promise<void> {
+  await preloadFetchAssets(
+    WORLD_ASSETS,
+    "Failed to preload world assets",
+    onDownloadProgress,
+  );
+}
+
+async function preloadModelAssets(
+  onDownloadProgress: (ratio: number) => void,
+): Promise<void> {
+  await preloadFetchAssets(
+    MODEL_ASSETS,
+    "Failed to preload enemy model",
+    onDownloadProgress,
+  );
 }
 
 export async function preloadGame(
@@ -98,6 +131,32 @@ export async function preloadGame(
       await preloadBabylon();
       completedWeight += step.weight;
       onProgress(completedWeight, step.label);
+      continue;
+    }
+
+    if (step.label === "Enemy model") {
+      await preloadModelAssets((downloadRatio) => {
+        const stepProgress = completedWeight + step.weight * downloadRatio;
+        onProgress(stepProgress, step.label);
+      });
+
+      completedWeight += step.weight;
+      onProgress(completedWeight, "Ready");
+      continue;
+    }
+
+    if (step.label === "View weapons") {
+      await preloadFetchAssets(
+        VIEW_WEAPON_ASSETS,
+        "Failed to preload view weapons",
+        (downloadRatio) => {
+          const stepProgress = completedWeight + step.weight * downloadRatio;
+          onProgress(stepProgress, step.label);
+        },
+      );
+
+      completedWeight += step.weight;
+      onProgress(completedWeight, "Ready");
       continue;
     }
 

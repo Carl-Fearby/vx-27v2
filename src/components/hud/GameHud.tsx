@@ -31,6 +31,7 @@ type GameHudProps = {
   hostileCount?: number;
   missionSeconds?: number;
   activePrimaryWeapon?: PrimaryWeaponId;
+  aimBlend?: number;
   selectedWeaponSlot?: number;
   grenadeCount?: number;
   flashbangCount?: number;
@@ -55,6 +56,7 @@ export default function GameHud({
   hostileCount = 0,
   missionSeconds = 0,
   activePrimaryWeapon = "rifle",
+  aimBlend = 0,
   selectedWeaponSlot = GRENADE_WEAPON_SLOT,
   grenadeCount = 0,
   flashbangCount = 0,
@@ -72,6 +74,15 @@ export default function GameHud({
     ...buildWeaponSlotLayoutStyle(),
     ...(hudWeaponTuning ? buildHudWeaponOpacityStyle(hudWeaponTuning) : {}),
   };
+  const safeAimBlend = Math.min(Math.max(aimBlend, 0), 1);
+  const rifleAdsReticleReady =
+    activePrimaryWeapon === "rifle"
+      ? Math.min(Math.max((safeAimBlend - 0.42) / 0.18, 0), 1)
+      : 0;
+  const standardCrosshairOpacity =
+    activePrimaryWeapon === "rifle"
+      ? Math.max(1 - rifleAdsReticleReady, 0)
+      : 1;
 
   useEffect(() => {
     if (!visible) {
@@ -99,8 +110,11 @@ export default function GameHud({
 
   return (
     <>
-      <div className="crosshair" aria-hidden="true" />
-
+      <div
+        className="crosshair"
+        aria-hidden="true"
+        style={{ opacity: 0.85 * standardCrosshairOpacity }}
+      />
       <div
         className="hud-bottom-bar"
         role="region"

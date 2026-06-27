@@ -12,6 +12,8 @@ import { useKeyBindings } from "@/hooks/useKeyBindings";
 import { useMaterialEdit } from "@/hooks/useMaterialEdit";
 import { useOutdoorLightingTuning } from "@/hooks/useOutdoorLightingTuning";
 import { useSettings } from "@/hooks/useSettings";
+import { useRoundDisplayTuning } from "@/hooks/useRoundDisplayTuning";
+import { useViewWeaponTuning } from "@/hooks/useViewWeaponTuning";
 import { useWeaponHudState } from "@/hooks/useWeaponHudState";
 import { setMusicEnabled } from "@/lib/audio/music";
 import { eventMatchesBinding, formatBindingValue } from "@/lib/keyBindings";
@@ -41,6 +43,19 @@ export default function GameShell() {
   const { tuning: hudWeaponTuning, updateTuning: updateHudWeaponTuning, resetTuning: resetHudWeaponTuning } =
     useHudWeaponTuning();
   const {
+    tuning: viewWeaponTuning,
+    updatePose: updateViewWeaponPose,
+    resetTuning: resetViewWeaponTuning,
+  } = useViewWeaponTuning();
+  const {
+    tuning: roundDisplayTuning,
+    updatePose: updateRoundDisplayPose,
+    resetTuning: resetRoundDisplayTuning,
+  } = useRoundDisplayTuning();
+  const [roundDisplayPreview, setRoundDisplayPreview] = useState<
+    { weapon: "rifle" | "pistol"; mode: "hip" | "ads" } | null
+  >(null);
+  const {
     materialEditMode,
     selectedSurface,
     surfaceTuning,
@@ -51,6 +66,9 @@ export default function GameShell() {
   } = useMaterialEdit();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSectionActive, setSettingsSectionActive] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [aimBlend, setAimBlend] = useState(0);
+  const aimBlendRef = useRef(0);
   const skyPreviewModeRef = useRef<
     ((mode: SkyTuningPreviewMode) => void) | null
   >(null);
@@ -71,6 +89,14 @@ export default function GameShell() {
 
   const handlePlayerCoords = useCallback((coords: PlayerCoords) => {
     playerCoordsRef.current = coords;
+  }, []);
+
+  const handleAimBlend = useCallback((nextAimBlend: number) => {
+    if (Math.abs(nextAimBlend - aimBlendRef.current) < 0.01) {
+      return;
+    }
+    aimBlendRef.current = nextAimBlend;
+    setAimBlend(nextAimBlend);
   }, []);
 
   const openSettings = useCallback(() => {
@@ -101,37 +127,14 @@ export default function GameShell() {
   }, [bindings, materialEditMode, openSettings, settingsOpen]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.code !== "KeyR" ||
-        event.repeat ||
-        settingsOpen ||
-        materialEditMode
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      updateSettings({ rainEnabled: !settings.rainEnabled });
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    materialEditMode,
-    settings.rainEnabled,
-    settingsOpen,
-    updateSettings,
-  ]);
-
-  useEffect(() => {
     setMusicEnabled(settings.musicEnabled, "level");
   }, [settings.musicEnabled]);
 
   const gamePaused = settingsOpen && !settingsSectionActive;
+  const scenePaused = gamePaused || !sceneReady;
 
   useEffect(() => {
-    if (gamePaused) {
+    if (scenePaused) {
       return;
     }
 
@@ -151,7 +154,7 @@ export default function GameShell() {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [gamePaused]);
+  }, [scenePaused]);
 
   const getYaw = useCallback(() => playerCoordsRef.current.yaw, []);
 
@@ -168,17 +171,23 @@ export default function GameShell() {
         outdoorTuning={outdoorTuning}
         flashlightTuning={flashlightTuning}
         motionBlurTuning={motionBlurTuning}
-        paused={settingsOpen && !settingsSectionActive}
+        viewWeaponTuning={viewWeaponTuning}
+        roundDisplayTuning={roundDisplayTuning}
+        roundDisplayPreview={roundDisplayPreview}
+        paused={scenePaused}
         pointerLockBlocked={settingsOpen}
         materialEditMode={materialEditMode}
+        activePrimaryWeapon={weaponHud.activePrimaryWeapon}
         surfaceTuning={surfaceTuning}
         onSurfacePick={setSelectedSurface}
         onToggleMaterialEditMode={toggleMaterialEditMode}
         onPlayerCoords={handlePlayerCoords}
+        onAimBlend={handleAimBlend}
+        onReady={() => setSceneReady(true)}
         skyPreviewModeRef={skyPreviewModeRef}
       />
       <GameHud
-        visible={hudVisible}
+        visible={hudVisible && sceneReady}
         getYaw={getYaw}
         onOpenSettings={openSettings}
         levelName="Square Arena"
@@ -186,11 +195,17 @@ export default function GameShell() {
         hostileCount={0}
         missionSeconds={missionSeconds}
         activePrimaryWeapon={weaponHud.activePrimaryWeapon}
+        aimBlend={aimBlend}
         selectedWeaponSlot={weaponHud.selectedWeaponSlot}
         grenadeCount={weaponHud.grenadeCount}
         flashbangCount={weaponHud.flashbangCount}
         hudWeaponTuning={hudWeaponTuning}
       />
+      {!sceneReady ? (
+        <div className="game-loading-cover" role="status" aria-live="polite">
+          <span>Preparing arena</span>
+        </div>
+      ) : null}
       {materialEditMode ? (
         <div className="material-edit-banner" role="status">
           Material edit — drag to look, WASD move, tap/click a surface to edit (don&apos;t drag). Press{" "}
@@ -225,6 +240,13 @@ export default function GameShell() {
         hudWeaponTuning={hudWeaponTuning}
         onHudWeaponTuningChange={updateHudWeaponTuning}
         onHudWeaponTuningReset={resetHudWeaponTuning}
+        viewWeaponTuning={viewWeaponTuning}
+        onViewWeaponTuningChange={updateViewWeaponPose}
+        onViewWeaponTuningReset={resetViewWeaponTuning}
+        roundDisplayTuning={roundDisplayTuning}
+        onRoundDisplayTuningChange={updateRoundDisplayPose}
+        onRoundDisplayTuningReset={resetRoundDisplayTuning}
+        onRoundDisplayPreviewChange={setRoundDisplayPreview}
         getPlayerCoords={getPlayerCoords}
         onSectionActiveChange={setSettingsSectionActive}
         bindings={bindings}

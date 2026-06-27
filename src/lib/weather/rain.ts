@@ -24,7 +24,7 @@ const FALL_SPEED = 58;
 const WIND_X = -5.4;
 const WIND_Z = -2.1;
 const WEATHER_FADE_SEC = 5;
-const RAIN_RENDERING_GROUP = 2;
+const RAIN_RENDERING_GROUP = 1;
 
 export type RainSystem = {
   root: TransformNode;
@@ -32,6 +32,14 @@ export type RainSystem = {
   lines: Vector3[][];
   positions: Float32Array;
   fade: number;
+};
+
+export type RainOccluder = {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  y: number;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -60,6 +68,59 @@ function respawnParticle(rain: RainSystem, index: number, nearTop = true) {
     ? BOX_HALF_H - Math.random() * 4
     : randomSigned(BOX_HALF_H);
   rain.positions[base + 2] = randomSigned(BOX_HALF_D);
+}
+
+function findBlockingOccluder(
+  worldTopX: number,
+  worldTopZ: number,
+  worldBottomX: number,
+  worldBottomZ: number,
+  streakTopY: number,
+  streakBottomY: number,
+  viewY: number,
+  occluders: RainOccluder[],
+): RainOccluder | null {
+  for (const occluder of occluders) {
+    const worldMidX = (worldTopX + worldBottomX) * 0.5;
+    const worldMidZ = (worldTopZ + worldBottomZ) * 0.5;
+    const topInsideFootprint =
+      worldTopX >= occluder.minX &&
+      worldTopX <= occluder.maxX &&
+      worldTopZ >= occluder.minZ &&
+      worldTopZ <= occluder.maxZ;
+    const midInsideFootprint =
+      worldMidX >= occluder.minX &&
+      worldMidX <= occluder.maxX &&
+      worldMidZ >= occluder.minZ &&
+      worldMidZ <= occluder.maxZ;
+    const bottomInsideFootprint =
+      worldBottomX >= occluder.minX &&
+      worldBottomX <= occluder.maxX &&
+      worldBottomZ >= occluder.minZ &&
+      worldBottomZ <= occluder.maxZ;
+    if (!topInsideFootprint && !midInsideFootprint && !bottomInsideFootprint) {
+      continue;
+    }
+
+    // If the camera is below the canopy, suppress the whole rain column in that
+    // footprint. Otherwise above-roof streaks can still render through the slab.
+    if (viewY <= occluder.y + 0.6) {
+      return occluder;
+    }
+
+    // Canopy behaviour: once a streak is under the catwalk deck, hide/respawn it.
+    if (streakTopY <= occluder.y + 0.18) {
+      return occluder;
+    }
+
+    if (
+      streakTopY >= occluder.y &&
+      streakBottomY <= occluder.y + 0.08
+    ) {
+      return occluder;
+    }
+  }
+  return null;
 }
 
 function syncLineFromPosition(rain: RainSystem, index: number) {
@@ -174,6 +235,7 @@ export function updateRainSystem(
   options: {
     enabled: boolean;
     intensity: number;
+    occluders?: RainOccluder[];
   },
 ) {
   const targetFade = options.enabled ? 1 : 0;
@@ -202,6 +264,7 @@ export function updateRainSystem(
   const fall = FALL_SPEED * fallMul * deltaSeconds;
   const windX = WIND_X * fallMul * deltaSeconds;
   const windZ = WIND_Z * fallMul * deltaSeconds;
+  const occluders = options.occluders ?? [];
 
   rain.root.position.copyFrom(camera.position);
   rain.root.setEnabled(true);
@@ -227,6 +290,29 @@ export function updateRainSystem(
     rain.positions[base] = x;
     rain.positions[base + 1] = y;
     rain.positions[base + 2] = z;
+
+    const worldX = rain.root.position.x + x;
+    const worldZ = rain.root.position.z + z;
+    const worldBottomX = worldX - 0.34;
+    const worldBottomZ = worldZ - 0.14;
+    const worldTopY = rain.root.position.y + y;
+    const worldBottomY = worldTopY - STREAK_LENGTH;
+    const blockedBy = findBlockingOccluder(
+      worldX,
+      worldZ,
+      worldBottomX,
+      worldBottomZ,
+      worldTopY,
+      worldBottomY,
+      rain.root.position.y,
+      occluders,
+    );
+
+    if (blockedBy) {
+      rain.lines[i][0].y = -9999;
+      rain.lines[i][1].y = -9999;
+      continue;
+    }
 
     if (y < -BOX_HALF_H) {
       respawnParticle(rain, i);

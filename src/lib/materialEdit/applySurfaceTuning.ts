@@ -1,13 +1,5 @@
-import { Color3, PBRMaterial, Texture, type BaseTexture } from "@babylonjs/core";
+import { Color3, PBRMaterial } from "@babylonjs/core";
 import type { SurfaceMaterialTuning } from "@/lib/materialEdit/types";
-
-function setTextureUv(texture: BaseTexture | null, u: number, v: number) {
-  if (!(texture instanceof Texture)) {
-    return;
-  }
-  texture.uScale = u;
-  texture.vScale = v;
-}
 
 export function applySurfaceTuning(
   material: PBRMaterial,
@@ -30,18 +22,9 @@ export function applySurfaceTuning(
     tuning.albedoBrightness * albedoTint.g,
     tuning.albedoBrightness * albedoTint.b,
   );
-
-  if (material.bumpTexture) {
-    material.bumpTexture.level = tuning.normalStrength;
-  }
-
-  setTextureUv(material.albedoTexture, tuning.uvScaleU, tuning.uvScaleV);
-  setTextureUv(material.bumpTexture, tuning.uvScaleU, tuning.uvScaleV);
-  setTextureUv(material.metallicTexture, tuning.uvScaleU, tuning.uvScaleV);
-  setTextureUv(material.ambientTexture, tuning.uvScaleU, tuning.uvScaleV);
 }
 
-/** Floor: GE2 MeshStandardMaterial parity — albedo + normal + roughness, no IBL/AO. */
+/** Floor: plain PBR — albedo + roughness, no IBL/AO. */
 export function applyFloorSurfaceTuning(
   material: PBRMaterial,
   tuning: SurfaceMaterialTuning,
@@ -52,9 +35,10 @@ export function applyFloorSurfaceTuning(
   material.clearCoat.isEnabled = false;
   material.reflectionTexture = null;
   material.ambientTexture = null;
+  material.albedoTexture = null;
+  material.bumpTexture = null;
+  material.metallicTexture = null;
   material.maxSimultaneousLights = 8;
-  material.useMetallnessFromMetallicTextureBlue = false;
-  material.useRoughnessFromMetallicTextureGreen = true;
   material.metallic = 0;
   material.roughness = tuning.roughness;
   material.environmentIntensity = 0;
@@ -75,7 +59,7 @@ export function applyWallSurfaceTuning(
   material.twoSidedLighting = true;
 }
 
-/** Catwalk deck — world UVs, double-sided for underside ceiling view. */
+/** Catwalk deck — double-sided for underside ceiling view. */
 export function applyCatwalkDeckSurfaceTuning(
   material: PBRMaterial,
   tuning: SurfaceMaterialTuning,
@@ -83,13 +67,11 @@ export function applyCatwalkDeckSurfaceTuning(
 ) {
   applyFloorSurfaceTuning(material, tuning, albedoTint);
   material.twoSidedLighting = true;
-  material.useMetallnessFromMetallicTextureBlue = false;
-  material.useRoughnessFromMetallicTextureGreen = true;
   material.metallic = tuning.metallic;
   material.roughness = tuning.roughness;
 }
 
-/** Catwalk parapet rails — separate texture set from arena walls. */
+/** Catwalk parapet rails. */
 export function applyCatwalkEdgeSurfaceTuning(
   material: PBRMaterial,
   tuning: SurfaceMaterialTuning,
@@ -99,10 +81,11 @@ export function applyCatwalkEdgeSurfaceTuning(
   material.maxSimultaneousLights = 8;
   material.reflectionTexture = null;
   material.ambientTexture = null;
+  material.albedoTexture = null;
+  material.bumpTexture = null;
+  material.metallicTexture = null;
   material.environmentIntensity = 0;
   material.clearCoat.isEnabled = false;
-  material.useMetallnessFromMetallicTextureBlue = false;
-  material.useRoughnessFromMetallicTextureGreen = true;
   material.metallic = tuning.metallic;
   material.roughness = tuning.roughness;
   material.directIntensity = 1;
@@ -110,7 +93,7 @@ export function applyCatwalkEdgeSurfaceTuning(
   material.backFaceCulling = false;
 }
 
-/** Painted hazard stripes — GE2 surface response, sun/moon direct only. */
+/** Pillar — plain PBR, sun/moon direct only. */
 export function applyPillarSurfaceTuning(
   material: PBRMaterial,
   tuning: SurfaceMaterialTuning,
@@ -119,10 +102,11 @@ export function applyPillarSurfaceTuning(
   applySurfaceTuning(material, tuning, albedoTint);
   material.maxSimultaneousLights = 8;
   material.reflectionTexture = null;
+  material.albedoTexture = null;
+  material.bumpTexture = null;
+  material.metallicTexture = null;
   material.environmentIntensity = 0;
   material.clearCoat.isEnabled = false;
-  material.useMetallnessFromMetallicTextureBlue = false;
-  material.useRoughnessFromMetallicTextureGreen = true;
   material.metallic = 0;
   material.roughness = 1;
   material.specularIntensity = 1;

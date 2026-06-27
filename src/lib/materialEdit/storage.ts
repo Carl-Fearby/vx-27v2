@@ -86,7 +86,7 @@ let sessionSurfaceTuning: SurfaceTuningState = {
 };
 
 /** Bumps when defaults change — clears stale in-memory edit-session values on hot reload. */
-const TUNING_SCHEMA_VERSION = 17;
+const TUNING_SCHEMA_VERSION = 18;
 let loadedTuningVersion = 0;
 
 function ensureTuningSchema() {

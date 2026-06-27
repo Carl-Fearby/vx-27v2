@@ -825,6 +825,20 @@ body:has(.app-shell) {
   background: radial-gradient(circle at top, #1a1a2e, #0a0a0f);
 }
 
+.game-loading-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: #030406;
+  color: #78d7ff;
+  font-family: var(--font-hud);
+  font-size: clamp(0.85rem, 2vw, 1.1rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .babylon-canvas {
   display: block;
   width: 100%;

@@ -4,7 +4,8 @@ import type {
   SurfaceTuningState,
 } from "@/lib/materialEdit/types";
 
-export const DEFAULT_FLOOR_TUNING: SurfaceMaterialTuning = {
+/** Shared plain-PBR defaults for every editable surface. */
+export const BASE_SURFACE_TUNING: SurfaceMaterialTuning = {
   uvScaleU: 1,
   uvScaleV: 1,
   roughness: 1,
@@ -13,60 +14,28 @@ export const DEFAULT_FLOOR_TUNING: SurfaceMaterialTuning = {
   clearCoatRoughness: 0.44,
   specularIntensity: 1,
   environmentIntensity: 0,
-  normalStrength: 1.15,
+  normalStrength: 1,
   albedoBrightness: 1,
+};
+
+export const DEFAULT_FLOOR_TUNING: SurfaceMaterialTuning = {
+  ...BASE_SURFACE_TUNING,
 };
 
 export const DEFAULT_PILLAR_TUNING: SurfaceMaterialTuning = {
-  uvScaleU: 4.8,
-  uvScaleV: 2.7,
-  roughness: 1,
-  metallic: 0,
-  shininess: 0,
-  clearCoatRoughness: 0.44,
-  specularIntensity: 1,
-  environmentIntensity: 0,
-  normalStrength: 1.15,
-  albedoBrightness: 1.35,
+  ...BASE_SURFACE_TUNING,
 };
 
 export const DEFAULT_WALL_TUNING: SurfaceMaterialTuning = {
-  uvScaleU: 0.5,
-  uvScaleV: 1.7,
-  roughness: 1,
-  metallic: 0,
-  shininess: 0,
-  clearCoatRoughness: 0.44,
-  specularIntensity: 1,
-  environmentIntensity: 0,
-  normalStrength: 1.15,
-  albedoBrightness: 1,
+  ...BASE_SURFACE_TUNING,
 };
 
 export const DEFAULT_CATWALK_DECK_TUNING: SurfaceMaterialTuning = {
-  uvScaleU: 0.5,
-  uvScaleV: 0.5,
-  roughness: 1,
-  metallic: 0.24,
-  shininess: 0,
-  clearCoatRoughness: 0.44,
-  specularIntensity: 1,
-  environmentIntensity: 0,
-  normalStrength: 0.63,
-  albedoBrightness: 2,
+  ...BASE_SURFACE_TUNING,
 };
 
 export const DEFAULT_CATWALK_EDGE_TUNING: SurfaceMaterialTuning = {
-  uvScaleU: 0.5,
-  uvScaleV: 0.5,
-  roughness: 0.68,
-  metallic: 0.24,
-  shininess: 0,
-  clearCoatRoughness: 0.44,
-  specularIntensity: 1,
-  environmentIntensity: 0,
-  normalStrength: 1.1,
-  albedoBrightness: 0.5,
+  ...BASE_SURFACE_TUNING,
 };
 
 export const DEFAULT_SURFACE_TUNING: SurfaceTuningState = {

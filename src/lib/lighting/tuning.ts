@@ -11,8 +11,8 @@ export const DAY_NIGHT_FADE_DURATION = 10;
 /** Northwest — tuned for arena wall shading. */
 export const SUN_AZIMUTH_DEFAULT = 313;
 export const SUN_ELEVATION_DEFAULT = 34;
-export const SUN_INTENSITY_DEFAULT = 8;
-export const SUN_TEMPERATURE_DEFAULT = 6400;
+export const SUN_INTENSITY_DEFAULT = 1.6;
+export const SUN_TEMPERATURE_DEFAULT = 9000;
 
 export const MOON_AZIMUTH_DEFAULT = 210;
 export const MOON_ELEVATION_DEFAULT = 24;
@@ -20,7 +20,7 @@ export const MOON_INTENSITY_DEFAULT = 2.36;
 export const MOON_TEMPERATURE_DEFAULT = 23500;
 export const MOON_COLOR = { r: 184 / 255, g: 200 / 255, b: 240 / 255 };
 
-export const DEFAULT_HEMI_DAY = { temperature: 7700, intensity: 1.2 };
+export const DEFAULT_HEMI_DAY = { temperature: 13000, intensity: 0.27 };
 export const DEFAULT_HEMI_NIGHT = { temperature: 0, intensity: 0 };
 
 export const DAY_CLEAR_COLOR = { r: 0.72, g: 0.85, b: 0.94 };
