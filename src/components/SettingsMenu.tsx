@@ -1,19 +1,23 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import KeyBindingsSection from "@/components/KeyBindingsSection";
 import { SettingsSlider, SettingsToggle } from "@/components/SettingsControls";
+import MotionBlurTuningSection from "@/components/MotionBlurTuningSection";
+import HudWeaponTuningSection from "@/components/HudWeaponTuningSection";
 import SkyTuningSection from "@/components/SkyTuningSection";
 import TorchTuningSection from "@/components/TorchTuningSection";
 import type { KeyBindingsMap } from "@/lib/keyBindings";
 import type { HudWeaponTuning } from "@/lib/hud/hudWeaponTuning";
-import {
-  HUD_WEAPON_OPACITY_MAX,
-  HUD_WEAPON_OPACITY_MIN,
-  HUD_WEAPON_OPACITY_STEP,
-} from "@/lib/hud/hudWeaponTuning";
+import type { SkyTuningPreviewMode } from "@/lib/lighting/createOutdoorSky";
 import type { OutdoorLightingTuning } from "@/lib/lighting/outdoorLightingTuning";
 import type { FlashlightTuning } from "@/lib/lighting/flashlightTuning";
+import type { MotionBlurTuning } from "@/lib/postProcess/motionBlurTuning";
+import {
+  RAIN_INTENSITY_MAX,
+  RAIN_INTENSITY_MIN,
+  RAIN_INTENSITY_STEP,
+} from "@/lib/weather/rain";
 import type { GameSettings } from "@/lib/settings";
 import {
   formatPlayerCoordsJson,
@@ -29,9 +33,13 @@ type SettingsMenuProps = {
   onOutdoorTuningChange: (patch: Partial<OutdoorLightingTuning>) => void;
   onOutdoorTuningResetHemi: () => void;
   onOutdoorTuningResetAll: () => void;
+  onSkyPreviewModeChange?: (mode: SkyTuningPreviewMode) => void;
   flashlightTuning?: FlashlightTuning;
   onFlashlightTuningChange?: (patch: Partial<FlashlightTuning>) => void;
   onFlashlightTuningReset?: () => void;
+  motionBlurTuning?: MotionBlurTuning;
+  onMotionBlurTuningChange?: (patch: Partial<MotionBlurTuning>) => void;
+  onMotionBlurTuningReset?: () => void;
   hudWeaponTuning?: HudWeaponTuning;
   onHudWeaponTuningChange?: (patch: Partial<HudWeaponTuning>) => void;
   onHudWeaponTuningReset?: () => void;
@@ -42,7 +50,24 @@ type SettingsMenuProps = {
   onBindingsChange?: (next: KeyBindingsMap) => void;
 };
 
-type SectionId = "look" | "controls" | "bob" | "keybindings" | "sky" | "torch" | "hud" | "debug";
+type SectionId =
+  | "audio"
+  | "look"
+  | "controls"
+  | "look-inversion"
+  | "keybindings"
+  | "visuals"
+  | "hud-visibility"
+  | "rain"
+  | "motionblur"
+  | "hud-weapon"
+  | "development"
+  | "player-position"
+  | "local-storage"
+  | "bob"
+  | "sky"
+  | "torch"
+  | "debug";
 
 type SectionConfig = {
   id: SectionId;
@@ -56,16 +81,64 @@ const LOOK_SECTION: SectionConfig = {
   description: "Sensitivity, easing, and turn rate",
 };
 
+const AUDIO_SECTION: SectionConfig = {
+  id: "audio",
+  title: "Audio",
+  description: "Music playback",
+};
+
 const CONTROLS_SECTION: SectionConfig = {
   id: "controls",
   title: "Controls",
-  description: "Look inversion",
+  description: "Look inversion and key bindings",
+};
+
+const LOOK_INVERSION_SECTION: SectionConfig = {
+  id: "look-inversion",
+  title: "Look inversion",
+  description: "Reverse camera axes",
 };
 
 const BOB_SECTION: SectionConfig = {
   id: "bob",
-  title: "Bob",
+  title: "Bob tuning",
   description: "Walk and run camera motion",
+};
+
+const VISUALS_SECTION: SectionConfig = {
+  id: "visuals",
+  title: "Visuals",
+  description: "Post-processing and display effects",
+};
+
+const HUD_VISIBILITY_SECTION: SectionConfig = {
+  id: "hud-visibility",
+  title: "HUD visibility",
+  description: "Show or hide the in-game HUD",
+};
+
+const RAIN_SECTION: SectionConfig = {
+  id: "rain",
+  title: "Rain",
+  description: "Storm grade and falling rain",
+};
+
+const MOTION_BLUR_SECTION: SectionConfig = {
+  id: "motionblur",
+  title: "Motion blur",
+  description: "Post-process camera smear",
+};
+
+const HUD_WEAPON_SECTION: SectionConfig = {
+  id: "hud-weapon",
+  title: "HUD weapon opacity",
+  description: "Primary and secondary weapon frames",
+};
+
+const DEVELOPMENT_SECTION: SectionConfig = {
+  id: "development",
+  title: "Development",
+  description: "Tuning panels and diagnostics",
 };
 
 const KEYBINDINGS_SECTION: SectionConfig = {
@@ -86,16 +159,22 @@ const TORCH_SECTION: SectionConfig = {
   description: "Beam spread, brightness, and reflector ring",
 };
 
-const HUD_SECTION: SectionConfig = {
-  id: "hud",
-  title: "HUD",
-  description: "Weapon stack frame brightness",
+const PLAYER_POSITION_SECTION: SectionConfig = {
+  id: "player-position",
+  title: "Player position",
+  description: "Copy current world coordinates",
+};
+
+const LOCAL_STORAGE_SECTION: SectionConfig = {
+  id: "local-storage",
+  title: "Local Storage",
+  description: "Copy or delete saved JSON data",
 };
 
 const DEBUG_SECTION: SectionConfig = {
   id: "debug",
   title: "Debug",
-  description: "Player position and diagnostics",
+  description: "Diagnostics",
 };
 
 function LookSection({
@@ -156,6 +235,25 @@ function LookSection({
   );
 }
 
+function AudioSection({
+  settings,
+  onChange,
+}: {
+  settings: GameSettings;
+  onChange: (patch: Partial<GameSettings>) => void;
+}) {
+  return (
+    <div className="settings-list">
+      <SettingsToggle
+        label="Music"
+        hint="Play loading and in-level soundtrack"
+        checked={settings.musicEnabled}
+        onChange={(checked) => onChange({ musicEnabled: checked })}
+      />
+    </div>
+  );
+}
+
 function ControlsSection({
   settings,
   onChange,
@@ -176,6 +274,55 @@ function ControlsSection({
         hint="Reverse vertical camera pan"
         checked={settings.invertLookY}
         onChange={(checked) => onChange({ invertLookY: checked })}
+      />
+    </div>
+  );
+}
+
+function HudVisibilitySection({
+  settings,
+  onChange,
+}: {
+  settings: GameSettings;
+  onChange: (patch: Partial<GameSettings>) => void;
+}) {
+  return (
+    <div className="settings-list">
+      <SettingsToggle
+        label="Show HUD"
+        hint="Display health, ammo, compass, and weapon stacks"
+        checked={settings.hudVisible}
+        onChange={(checked) => onChange({ hudVisible: checked })}
+      />
+    </div>
+  );
+}
+
+function RainSection({
+  settings,
+  onChange,
+}: {
+  settings: GameSettings;
+  onChange: (patch: Partial<GameSettings>) => void;
+}) {
+  return (
+    <div className="settings-list">
+      <SettingsToggle
+        label="Rain"
+        hint="Darken and desaturate the level with falling rain"
+        checked={settings.rainEnabled}
+        onChange={(checked) => onChange({ rainEnabled: checked })}
+      />
+      <SettingsSlider
+        label="Rain intensity"
+        hint="GE2 range: drizzle to heavy storm"
+        min={RAIN_INTENSITY_MIN}
+        max={RAIN_INTENSITY_MAX}
+        step={RAIN_INTENSITY_STEP}
+        value={settings.rainIntensity}
+        suffix="x"
+        decimals={2}
+        onChange={(value) => onChange({ rainIntensity: value })}
       />
     </div>
   );
@@ -221,45 +368,7 @@ function BobSection({
   );
 }
 
-function HudSection({
-  tuning,
-  onChange,
-  onReset,
-}: {
-  tuning: HudWeaponTuning;
-  onChange: (patch: Partial<HudWeaponTuning>) => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="settings-list">
-      <SettingsSlider
-        label="Primary weapon frame opacity"
-        hint="Bottom-left V/B stack background brightness"
-        min={HUD_WEAPON_OPACITY_MIN}
-        max={HUD_WEAPON_OPACITY_MAX}
-        step={HUD_WEAPON_OPACITY_STEP}
-        value={tuning.primaryFrameOpacity}
-        onChange={(value) => onChange({ primaryFrameOpacity: value })}
-      />
-      <SettingsSlider
-        label="Secondary weapon frame opacity"
-        hint="Bottom-right 1–4 stack background brightness (all slots match)"
-        min={HUD_WEAPON_OPACITY_MIN}
-        max={HUD_WEAPON_OPACITY_MAX}
-        step={HUD_WEAPON_OPACITY_STEP}
-        value={tuning.secondaryFrameOpacity}
-        onChange={(value) => onChange({ secondaryFrameOpacity: value })}
-      />
-      <div className="settings-row">
-        <button type="button" className="settings-copy-button" onClick={onReset}>
-          Reset HUD weapon opacity
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function DebugSection({
+function PlayerPositionSection({
   open,
   getPlayerCoords,
   playerCoords,
@@ -273,13 +382,10 @@ function DebugSection({
 
   useEffect(() => {
     if (!open) {
-      setCopied(false);
       return;
     }
 
     const readCoords = () => getPlayerCoords?.() ?? playerCoords ?? null;
-
-    setCoords(readCoords());
 
     let frameId = 0;
     const tick = () => {
@@ -332,6 +438,104 @@ function DebugSection({
   );
 }
 
+function LocalStorageSection() {
+  const [status, setStatus] = useState("");
+
+  const readVx27Storage = () => {
+    if (typeof window === "undefined") {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.keys(window.localStorage)
+        .filter((key) => key.startsWith("vx27-"))
+        .sort()
+        .map((key) => [key, window.localStorage.getItem(key)]),
+    );
+  };
+
+  const notifyStorageReset = () => {
+    try {
+      window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    } catch {
+      window.dispatchEvent(new Event("storage"));
+    }
+  };
+
+  const copyJson = async () => {
+    const text = JSON.stringify(readVx27Storage(), null, 2);
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("Copied JSON");
+    } catch {
+      setStatus("Copy failed");
+    }
+  };
+
+  const deleteJson = () => {
+    const keys = Object.keys(window.localStorage).filter((key) =>
+      key.startsWith("vx27-"),
+    );
+
+    for (const key of keys) {
+      window.localStorage.removeItem(key);
+    }
+
+    notifyStorageReset();
+    setStatus(keys.length ? "Deleted JSON" : "No JSON found");
+  };
+
+  return (
+    <div className="settings-list">
+      <div className="settings-row">
+        <span className="settings-row-copy">
+          <span className="settings-row-label">VX-27 JSON</span>
+          <span className="settings-row-hint">
+            Export or clear saved settings, bindings, and tuning data
+          </span>
+          {status ? <span className="settings-row-hint">{status}</span> : null}
+        </span>
+        <span className="settings-row-control">
+          <button
+            type="button"
+            className="settings-copy-button"
+            onClick={() => void copyJson()}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            className="settings-copy-button"
+            onClick={deleteJson}
+          >
+            Delete
+          </button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DebugSection({
+  settings,
+  onChange,
+}: {
+  settings: GameSettings;
+  onChange: (patch: Partial<GameSettings>) => void;
+}) {
+  return (
+    <div className="settings-list">
+      <SettingsToggle
+        label="Show collision footprint"
+        hint="Draw the player floor collision circle; turns orange when blocked"
+        checked={settings.showPlayerCollisionFootprint}
+        onChange={(checked) => onChange({ showPlayerCollisionFootprint: checked })}
+      />
+    </div>
+  );
+}
+
 function SettingsSectionNav({
   sections,
   onSelect,
@@ -366,12 +570,12 @@ function SettingsSectionNav({
 function SettingsSectionPopout({
   section,
   onBack,
-  onClose,
+  onDismiss,
   children,
 }: {
   section: SectionConfig;
   onBack: () => void;
-  onClose: () => void;
+  onDismiss: () => void;
   children: ReactNode;
 }) {
   return (
@@ -399,13 +603,58 @@ function SettingsSectionPopout({
         <button
           type="button"
           className="settings-close settings-popout-close"
-          onClick={onClose}
-          aria-label="Close settings"
+          onClick={onDismiss}
+          aria-label="Back to main settings menu"
         >
           ×
         </button>
       </header>
       <div className="settings-popout-body">{children}</div>
+    </aside>
+  );
+}
+
+/** Floating dev tuning window — separate from the settings slide-out panel. */
+function SettingsDevWindow({
+  section,
+  windowIndex,
+  onClose,
+  children,
+}: {
+  section: SectionConfig;
+  windowIndex: number;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <aside
+      className="settings-dev-window"
+      style={{ "--dev-window-offset": windowIndex } as React.CSSProperties}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={`settings-dev-window-${section.id}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <header className="settings-dev-window-header">
+        <div>
+          <p className="settings-dev-window-eyebrow">Development</p>
+          <h3
+            className="settings-dev-window-title"
+            id={`settings-dev-window-${section.id}`}
+          >
+            {section.title}
+          </h3>
+        </div>
+        <button
+          type="button"
+          className="settings-close"
+          onClick={onClose}
+          aria-label={`Close ${section.title}`}
+        >
+          ×
+        </button>
+      </header>
+      <div className="settings-dev-window-body">{children}</div>
     </aside>
   );
 }
@@ -419,9 +668,13 @@ export default function SettingsMenu({
   onOutdoorTuningChange,
   onOutdoorTuningResetHemi,
   onOutdoorTuningResetAll,
+  onSkyPreviewModeChange,
   flashlightTuning,
   onFlashlightTuningChange,
   onFlashlightTuningReset,
+  motionBlurTuning,
+  onMotionBlurTuningChange,
+  onMotionBlurTuningReset,
   hudWeaponTuning,
   onHudWeaponTuningChange,
   onHudWeaponTuningReset,
@@ -431,37 +684,189 @@ export default function SettingsMenu({
   bindings,
   onBindingsChange,
 }: SettingsMenuProps) {
-  const [activeSection, setActiveSection] = useState<SectionId | null>(null);
+  const [sectionStack, setSectionStack] = useState<SectionId[]>([]);
+  const [openDevWindows, setOpenDevWindows] = useState<SectionId[]>([]);
   const hasDebug = Boolean(getPlayerCoords || playerCoords);
   const hasKeyBindings = Boolean(bindings && onBindingsChange);
+  const hasMotionBlur = Boolean(
+    motionBlurTuning && onMotionBlurTuningChange && onMotionBlurTuningReset,
+  );
+  const hasTorch = Boolean(
+    flashlightTuning && onFlashlightTuningChange && onFlashlightTuningReset,
+  );
+  const hasHudWeapon = Boolean(
+    hudWeaponTuning && onHudWeaponTuningChange && onHudWeaponTuningReset,
+  );
 
-  const sections = [
+  const topSections = [
+    AUDIO_SECTION,
     LOOK_SECTION,
     CONTROLS_SECTION,
-    BOB_SECTION,
+    VISUALS_SECTION,
+    DEVELOPMENT_SECTION,
+  ];
+
+  const controlsSections = [
+    LOOK_INVERSION_SECTION,
     ...(hasKeyBindings ? [KEYBINDINGS_SECTION] : []),
+  ];
+  const visualsSections = [
+    HUD_VISIBILITY_SECTION,
+    RAIN_SECTION,
+    ...(hasMotionBlur ? [MOTION_BLUR_SECTION] : []),
+  ];
+  const developmentSections = [
+    ...(hasDebug ? [PLAYER_POSITION_SECTION] : []),
+    LOCAL_STORAGE_SECTION,
+    BOB_SECTION,
     SKY_SECTION,
-    ...(flashlightTuning && onFlashlightTuningChange && onFlashlightTuningReset
-      ? [TORCH_SECTION]
-      : []),
-    ...(hudWeaponTuning && onHudWeaponTuningChange && onHudWeaponTuningReset
-      ? [HUD_SECTION]
-      : []),
+    ...(hasTorch ? [TORCH_SECTION] : []),
+    ...(hasHudWeapon ? [HUD_WEAPON_SECTION] : []),
     ...(hasDebug ? [DEBUG_SECTION] : []),
   ];
 
-  const currentSection =
-    sections.find((section) => section.id === activeSection) ?? null;
+  const childSectionsByParent: Partial<Record<SectionId, SectionConfig[]>> = {
+    controls: controlsSections,
+    visuals: visualsSections,
+    development: developmentSections,
+  };
 
-  useEffect(() => {
-    if (!open) {
-      setActiveSection(null);
+  const allSections = [
+    ...topSections,
+    ...controlsSections,
+    ...visualsSections,
+    ...developmentSections,
+  ];
+  const sectionById = Object.fromEntries(
+    allSections.map((section) => [section.id, section]),
+  ) as Record<SectionId, SectionConfig>;
+
+  const pushSection = (id: SectionId) => {
+    setSectionStack((current) => [...current, id]);
+  };
+
+  const openDevWindow = (id: SectionId) => {
+    if (id === "development" || childSectionsByParent[id]) {
+      return;
     }
-  }, [open]);
+    setOpenDevWindows((current) =>
+      current.includes(id) ? current : [...current, id],
+    );
+  };
+
+  const closeDevWindow = (id: SectionId) => {
+    setOpenDevWindows((current) => current.filter((sectionId) => sectionId !== id));
+  };
+
+  const openTopSection = (id: SectionId) => {
+    setSectionStack([id]);
+  };
+
+  const popSection = () => {
+    setSectionStack((current) => current.slice(0, -1));
+  };
+
+  const clearSections = () => {
+    setSectionStack([]);
+  };
+
+  const renderSectionContent = (sectionId: SectionId) => {
+    const childSections = childSectionsByParent[sectionId];
+    if (childSections) {
+      return (
+        <SettingsSectionNav
+          sections={childSections}
+          onSelect={sectionId === "development" ? openDevWindow : pushSection}
+        />
+      );
+    }
+
+    switch (sectionId) {
+      case "look":
+        return <LookSection settings={settings} onChange={onChange} />;
+      case "audio":
+        return <AudioSection settings={settings} onChange={onChange} />;
+      case "look-inversion":
+        return <ControlsSection settings={settings} onChange={onChange} />;
+      case "hud-visibility":
+        return (
+          <HudVisibilitySection settings={settings} onChange={onChange} />
+        );
+      case "rain":
+        return <RainSection settings={settings} onChange={onChange} />;
+      case "player-position":
+        return (
+          <PlayerPositionSection
+            open={openDevWindows.includes("player-position")}
+            playerCoords={playerCoords}
+            getPlayerCoords={getPlayerCoords}
+          />
+        );
+      case "local-storage":
+        return <LocalStorageSection />;
+      case "bob":
+        return <BobSection settings={settings} onChange={onChange} />;
+      case "motionblur":
+        return motionBlurTuning &&
+          onMotionBlurTuningChange &&
+          onMotionBlurTuningReset ? (
+          <MotionBlurTuningSection
+            tuning={motionBlurTuning}
+            onChange={onMotionBlurTuningChange}
+            onReset={onMotionBlurTuningReset}
+          />
+        ) : null;
+      case "keybindings":
+        return bindings && onBindingsChange ? (
+          <KeyBindingsSection bindings={bindings} onChange={onBindingsChange} />
+        ) : null;
+      case "sky":
+        return (
+          <SkyTuningSection
+            tuning={outdoorTuning}
+            onChange={onOutdoorTuningChange}
+            onResetHemi={onOutdoorTuningResetHemi}
+            onResetAll={onOutdoorTuningResetAll}
+            onPreviewModeChange={onSkyPreviewModeChange}
+          />
+        );
+      case "torch":
+        return flashlightTuning &&
+          onFlashlightTuningChange &&
+          onFlashlightTuningReset ? (
+          <TorchTuningSection
+            tuning={flashlightTuning}
+            onChange={onFlashlightTuningChange}
+            onReset={onFlashlightTuningReset}
+          />
+        ) : null;
+      case "hud-weapon":
+        return hudWeaponTuning &&
+          onHudWeaponTuningChange &&
+          onHudWeaponTuningReset ? (
+          <HudWeaponTuningSection
+            tuning={hudWeaponTuning}
+            onChange={onHudWeaponTuningChange}
+            onReset={onHudWeaponTuningReset}
+          />
+        ) : null;
+      case "debug":
+        return <DebugSection settings={settings} onChange={onChange} />;
+      default:
+        return null;
+    }
+  };
 
   useEffect(() => {
-    onSectionActiveChange?.(activeSection !== null);
-  }, [activeSection, onSectionActiveChange]);
+    onSectionActiveChange?.(
+      sectionStack.length > 0 || openDevWindows.length > 0,
+    );
+  }, [sectionStack.length, openDevWindows.length, onSectionActiveChange]);
+
+  const closeMenu = useCallback(() => {
+    clearSections();
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -474,118 +879,88 @@ export default function SettingsMenu({
       }
 
       event.preventDefault();
-      if (activeSection) {
-        setActiveSection(null);
+      if (sectionStack.length > 0) {
+        popSection();
         return;
       }
 
-      onClose();
+      closeMenu();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, activeSection]);
+  }, [open, sectionStack.length, closeMenu]);
 
-  if (!open) {
+  if (!open && openDevWindows.length === 0) {
     return null;
   }
 
-  const sectionContent = currentSection ? (
-    <>
-      {currentSection.id === "look" ? (
-        <LookSection settings={settings} onChange={onChange} />
-      ) : null}
-      {currentSection.id === "controls" ? (
-        <ControlsSection settings={settings} onChange={onChange} />
-      ) : null}
-      {currentSection.id === "bob" ? (
-        <BobSection settings={settings} onChange={onChange} />
-      ) : null}
-      {currentSection.id === "keybindings" && bindings && onBindingsChange ? (
-        <KeyBindingsSection bindings={bindings} onChange={onBindingsChange} />
-      ) : null}
-      {currentSection.id === "sky" ? (
-        <SkyTuningSection
-          tuning={outdoorTuning}
-          onChange={onOutdoorTuningChange}
-          onResetHemi={onOutdoorTuningResetHemi}
-          onResetAll={onOutdoorTuningResetAll}
-        />
-      ) : null}
-      {currentSection.id === "torch" &&
-      flashlightTuning &&
-      onFlashlightTuningChange &&
-      onFlashlightTuningReset ? (
-        <TorchTuningSection
-          tuning={flashlightTuning}
-          onChange={onFlashlightTuningChange}
-          onReset={onFlashlightTuningReset}
-        />
-      ) : null}
-      {currentSection.id === "hud" &&
-      hudWeaponTuning &&
-      onHudWeaponTuningChange &&
-      onHudWeaponTuningReset ? (
-        <HudSection
-          tuning={hudWeaponTuning}
-          onChange={onHudWeaponTuningChange}
-          onReset={onHudWeaponTuningReset}
-        />
-      ) : null}
-      {currentSection.id === "debug" ? (
-        <DebugSection
-          open={open}
-          playerCoords={playerCoords}
-          getPlayerCoords={getPlayerCoords}
-        />
-      ) : null}
-    </>
-  ) : null;
-
-  if (currentSection) {
-    return (
-      <SettingsSectionPopout
-        section={currentSection}
-        onBack={() => setActiveSection(null)}
-        onClose={onClose}
-      >
-        {sectionContent}
-      </SettingsSectionPopout>
-    );
-  }
-
   return (
-    <div className="settings-overlay" role="presentation" onClick={onClose}>
-      <section
-        className="settings-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        onClick={(event) => event.stopPropagation()}
-        onWheel={(event) => event.stopPropagation()}
-      >
-        <header className="settings-header">
-          <div>
-            <p className="settings-eyebrow">Options</p>
-            <h2 id="settings-title">Settings</h2>
-          </div>
-          <button
-            type="button"
-            className="settings-close"
-            onClick={onClose}
-            aria-label="Close settings"
-          >
-            ×
-          </button>
-        </header>
+    <>
+      {open ? (
+      <div className="settings-overlay" role="presentation" onClick={closeMenu}>
+        <section
+          className="settings-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+          onClick={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          <header className="settings-header">
+            <div>
+              <p className="settings-eyebrow">Options</p>
+              <h2 id="settings-title">Settings</h2>
+            </div>
+            <button
+              type="button"
+              className="settings-close"
+              onClick={closeMenu}
+              aria-label="Close settings"
+            >
+              ×
+            </button>
+          </header>
 
-        <div className="settings-body">
-          <SettingsSectionNav
-            sections={sections}
-            onSelect={setActiveSection}
-          />
-        </div>
-      </section>
-    </div>
+          <div className="settings-body">
+            <SettingsSectionNav
+              sections={topSections}
+              onSelect={openTopSection}
+            />
+            {sectionStack.length > 0 ? (
+              <SettingsSectionPopout
+                section={
+                  sectionById[sectionStack[sectionStack.length - 1]!]
+                }
+                onBack={popSection}
+                onDismiss={clearSections}
+              >
+                {renderSectionContent(sectionStack[sectionStack.length - 1]!)}
+              </SettingsSectionPopout>
+            ) : null}
+          </div>
+        </section>
+      </div>
+      ) : null}
+      {openDevWindows
+        .filter((sectionId) => sectionId !== "development")
+        .map((sectionId, index) => {
+        const section = sectionById[sectionId];
+        if (!section) {
+          return null;
+        }
+
+        return (
+          <SettingsDevWindow
+            key={sectionId}
+            section={section}
+            windowIndex={index}
+            onClose={() => closeDevWindow(sectionId)}
+          >
+            {renderSectionContent(sectionId)}
+          </SettingsDevWindow>
+        );
+      })}
+    </>
   );
 }

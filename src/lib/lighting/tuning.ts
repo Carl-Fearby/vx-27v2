@@ -8,7 +8,8 @@ export const MOON_DISC_SIZE = SUN_BOWL_RADIUS * 0.176;
 export const NIGHT_SKY_LAT_OFFSET = 0.1;
 export const DAY_NIGHT_FADE_DURATION = 10;
 
-export const SUN_AZIMUTH_DEFAULT = 284;
+/** Northwest — tuned for arena wall shading. */
+export const SUN_AZIMUTH_DEFAULT = 313;
 export const SUN_ELEVATION_DEFAULT = 34;
 export const SUN_INTENSITY_DEFAULT = 8;
 export const SUN_TEMPERATURE_DEFAULT = 6400;

@@ -1,6 +1,8 @@
 import { Matrix, type AbstractMesh, type Camera, type Scene } from "@babylonjs/core";
 import { meshNameToSurfaceId } from "@/lib/materialEdit/defaults";
-import type { EditableSurfaceId } from "@/lib/materialEdit/types";
+import { EDITABLE_SURFACE_IDS, type EditableSurfaceId } from "@/lib/materialEdit/types";
+
+const EDITABLE_SURFACE_SET = new Set<string>(EDITABLE_SURFACE_IDS);
 
 const EDITABLE_SURFACE_METADATA_KEY = "editableSurfaceId";
 
@@ -17,8 +19,8 @@ export function tagEditableSurface(
 
 function meshToSurfaceId(mesh: AbstractMesh): EditableSurfaceId | null {
   const fromMetadata = mesh.metadata?.[EDITABLE_SURFACE_METADATA_KEY];
-  if (fromMetadata === "floor" || fromMetadata === "pillar") {
-    return fromMetadata;
+  if (typeof fromMetadata === "string" && EDITABLE_SURFACE_SET.has(fromMetadata)) {
+    return fromMetadata as EditableSurfaceId;
   }
   return meshNameToSurfaceId(mesh.name);
 }

@@ -1,4 +1,10 @@
-export const EDITABLE_SURFACE_IDS = ["floor", "pillar"] as const;
+export const EDITABLE_SURFACE_IDS = [
+  "floor",
+  "pillar",
+  "wall",
+  "catwalkDeck",
+  "catwalkEdge",
+] as const;
 
 export type EditableSurfaceId = (typeof EDITABLE_SURFACE_IDS)[number];
 

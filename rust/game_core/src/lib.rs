@@ -1,9 +1,12 @@
+mod death;
 mod flashlight;
+mod floor_hole;
 mod input;
 mod look;
 mod player;
 mod world;
 
+use death::{player_death_reason, should_trigger_death, DeathState};
 use flashlight::FlashlightState;
 use input::{
     InputState, KEY_A, KEY_ARROW_DOWN, KEY_ARROW_LEFT, KEY_ARROW_RIGHT, KEY_ARROW_UP, KEY_D, KEY_S,
@@ -19,6 +22,7 @@ pub struct GameCore {
     player: PlayerState,
     world: World,
     flashlight: FlashlightState,
+    death: DeathState,
 }
 
 #[wasm_bindgen]
@@ -30,6 +34,7 @@ impl GameCore {
             player: PlayerState::default(),
             world: World::default(),
             flashlight: FlashlightState::default(),
+            death: DeathState::default(),
         }
     }
 
@@ -37,6 +42,7 @@ impl GameCore {
         self.input = InputState::default();
         self.player.reset();
         self.flashlight = FlashlightState::default();
+        self.death.clear();
     }
 
     pub fn press_flashlight_toggle(&mut self) {
@@ -159,8 +165,85 @@ impl GameCore {
     }
 
     pub fn tick(&mut self, delta_seconds: f32) {
-        self.player.tick(&self.input, delta_seconds, &self.world);
+        if !self.death.active {
+            self.player.tick(&self.input, delta_seconds, &self.world);
+        }
         self.flashlight.tick(delta_seconds);
+    }
+
+    pub fn try_begin_hole_fall(&mut self) {
+        if self.death.active {
+            return;
+        }
+        self.world.try_begin_hole_fall(&mut self.player);
+    }
+
+    pub fn foot_y(&self) -> f32 {
+        self.player.foot_y()
+    }
+
+    pub fn eye_height(&self) -> f32 {
+        self.player.eye_height
+    }
+
+    pub fn falling_through_hole(&self) -> bool {
+        self.player.falling_through_hole
+    }
+
+    pub fn death_active(&self) -> bool {
+        self.death.active
+    }
+
+    pub fn death_reason(&self) -> String {
+        self.death.reason.clone()
+    }
+
+    pub fn death_min_display_end_ms(&self) -> f64 {
+        self.death.min_display_end_ms
+    }
+
+    pub fn should_die_from_fall(&self) -> bool {
+        should_trigger_death(
+            self.death.active,
+            self.player.foot_y(),
+            self.world.floor_foot_y(),
+            floor_hole::DEATH_FALL_DROP,
+        ) || self.world.hole_fall_should_die(&self.player)
+    }
+
+    pub fn apply_player_death(&mut self, kind: &str, now_ms: f64, min_display_ms: f64) -> bool {
+        if self.death.active {
+            return false;
+        }
+        self.death.active = true;
+        self.death.reason = player_death_reason(kind).to_string();
+        self.death.min_display_end_ms = now_ms + min_display_ms.max(0.0);
+        self.death.fade_end_ms = f64::INFINITY;
+        self.input.clear();
+        true
+    }
+
+    pub fn plan_player_respawn(&mut self, now_ms: f64, fade_ms: f64) -> bool {
+        if !self.death.active {
+            return false;
+        }
+        self.player.reset();
+        self.input.clear();
+        self.death.fade_end_ms = now_ms + fade_ms.max(0.0);
+        self.death.active = false;
+        self.death.reason.clear();
+        self.death.min_display_end_ms = 0.0;
+        true
+    }
+
+    pub fn finish_death_overlay(&mut self) {
+        self.death.clear();
+    }
+
+    pub fn sync_player_position(&mut self, x: f32, y: f32, z: f32) {
+        self.player.x = x;
+        self.player.y = y;
+        self.player.z = z;
     }
 
     pub fn position_x(&self) -> f32 {

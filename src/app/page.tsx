@@ -1,5 +1,5 @@
-import StartScreen from "@/components/StartScreen";
+import MarketingHome from "@/components/MarketingHome";
 
 export default function Home() {
-  return <StartScreen />;
+  return <MarketingHome />;
 }

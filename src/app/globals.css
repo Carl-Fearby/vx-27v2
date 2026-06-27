@@ -13,10 +13,10 @@
 html,
 body {
   width: 100%;
-  min-height: 100%;
+  height: 100%;
   margin: 0;
-  background: #0a0a0f;
-  color: #f4f4f5;
+  background: #0a0a0c;
+  color: #e8e8ec;
   font-family:
     system-ui,
     -apple-system,
@@ -29,6 +29,81 @@ body:has(.app-shell) {
   overflow: hidden;
 }
 
+.marketing-home {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.9fr) minmax(18rem, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 5rem);
+  padding: clamp(2rem, 6vw, 5rem);
+  font-family: var(--font-hud);
+  background:
+    radial-gradient(circle at 35% 22%, rgba(31, 143, 255, 0.18), transparent 30%),
+    linear-gradient(180deg, #06080d 0%, #030406 100%);
+}
+
+.marketing-logo {
+  width: min(100%, 34rem);
+  height: auto;
+  justify-self: center;
+}
+
+.marketing-copy {
+  max-width: 34rem;
+}
+
+.marketing-kicker {
+  margin: 0 0 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(94, 170, 255, 0.82);
+}
+
+.marketing-copy h1 {
+  margin: 0;
+  font-size: clamp(3rem, 10vw, 6rem);
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+}
+
+.marketing-copy p:not(.marketing-kicker) {
+  margin: 1.2rem 0 2rem;
+  color: rgba(238, 247, 255, 0.72);
+  line-height: 1.7;
+}
+
+.marketing-play-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 12rem;
+  min-height: 3rem;
+  padding: 0.75rem 2.4rem;
+  border: 1px solid rgba(94, 170, 255, 0.35);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgb(30, 160, 255) 0%, rgb(20, 120, 210) 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .marketing-home {
+    grid-template-columns: 1fr;
+    align-content: center;
+    text-align: center;
+  }
+
+  .marketing-copy {
+    justify-self: center;
+  }
+}
+
 .app-shell {
   position: relative;
   width: 100vw;
@@ -38,125 +113,170 @@ body:has(.app-shell) {
 }
 
 .start-screen {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6rem;
   min-height: 100vh;
   padding: 2rem;
   font-family: var(--font-hud);
-  background:
-    radial-gradient(circle at top, rgba(56, 88, 168, 0.22), transparent 42%),
-    radial-gradient(circle at bottom right, rgba(120, 48, 96, 0.18), transparent 36%),
-    linear-gradient(180deg, #101018 0%, #0a0a0f 100%);
+  background: #030406;
 }
 
-.start-card {
-  width: min(100%, 32rem);
-  padding: 2rem;
-  border-radius: 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 10, 16, 0.72);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-}
-
-.start-eyebrow {
-  margin: 0 0 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(147, 197, 253, 0.85);
+.start-hero-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
 }
 
 .start-title {
-  margin: 0;
-  font-size: clamp(2.5rem, 8vw, 3.5rem);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.start-logo {
+  display: block;
+  max-width: min(720px, 85vw);
+  max-height: 65vh;
+  width: auto;
+  height: auto;
+}
+
+.start-music-toggle {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(238, 247, 255, 0.92);
+}
+
+.start-music-label,
+.start-music-hint {
+  display: block;
+}
+
+.start-music-label {
+  font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.start-copy {
-  margin: 1rem 0 1.75rem;
-  line-height: 1.6;
-  color: rgba(244, 244, 245, 0.72);
+.start-music-hint {
+  display: none;
+}
+
+.start-music-toggle input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: rgb(30, 160, 255);
 }
 
 .loading-block {
-  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(320px, 60vw);
 }
 
 .loading-meta {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.5rem;
-  font-size: 0.85rem;
-  color: rgba(244, 244, 245, 0.7);
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(180, 210, 255, 0.85);
 }
 
 .loading-track {
   overflow: hidden;
-  height: 0.55rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(20, 22, 30, 0.9);
+  border: 1px solid rgba(94, 170, 255, 0.15);
 }
 
 .loading-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #60a5fa, #a78bfa);
-  transition: width 180ms ease-out;
+  background: linear-gradient(
+    180deg,
+    rgb(30, 160, 255) 0%,
+    rgb(70, 200, 255) 45%,
+    rgb(30, 160, 255) 100%
+  );
+  transition: width 0.4s ease;
 }
 
 .start-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
+  min-width: min(320px, 60vw);
   min-height: 3rem;
-  border: 0;
-  border-radius: 0.85rem;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  padding: 0.75rem 2.4rem;
+  border: 1px solid rgba(94, 170, 255, 0.35);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgb(30, 160, 255) 0%, rgb(20, 120, 210) 100%);
   color: #fff;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   text-decoration: none;
   cursor: pointer;
   transition:
-    transform 150ms ease,
-    opacity 150ms ease,
-    filter 150ms ease;
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .start-button:hover,
 .start-button:focus-visible {
-  filter: brightness(1.05);
-  transform: translateY(-1px);
+  border-color: rgba(94, 170, 255, 0.55);
+  box-shadow: 0 0 16px rgba(94, 170, 255, 0.2);
 }
 
 .start-button--disabled {
   opacity: 0.45;
   pointer-events: none;
   cursor: not-allowed;
-  transform: none;
 }
 
 .start-actions {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 0.75rem;
+  width: min(320px, 60vw);
 }
 
 .start-button--secondary {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 16, 24, 0.92);
 }
 
 .start-button--secondary:hover,
 .start-button--secondary:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
-  filter: none;
+  background: rgba(18, 26, 38, 0.96);
+  box-shadow: 0 0 16px rgba(94, 170, 255, 0.12);
 }
 
 .settings-button {
@@ -261,14 +381,27 @@ body:has(.app-shell) {
 .settings-body {
   position: relative;
   flex: 1;
-  min-height: 14rem;
+  min-height: 0;
   overflow: hidden;
+  overscroll-behavior: contain;
   padding: 0.85rem 1rem 1rem;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-body::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 140, 0.4);
+  border-radius: 3px;
 }
 
 .settings-nav {
   display: grid;
   gap: 0.55rem;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .settings-nav-item {
@@ -325,19 +458,17 @@ body:has(.app-shell) {
 }
 
 .settings-popout--docked {
-  position: fixed;
-  top: 1rem;
-  left: 1rem;
-  bottom: 1rem;
-  z-index: 31;
-  width: min(calc(100vw - 2rem), 26rem);
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
   padding: 0.85rem 1rem 1rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(12, 12, 18, 0.96);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(10px);
-  animation: settings-popout-dock-in 200ms ease;
+  border-radius: 0;
+  border: 0;
+  background: rgba(12, 12, 18, 0.98);
+  box-shadow: none;
+  backdrop-filter: none;
+  animation: settings-popout-in 200ms ease;
 }
 
 @keyframes settings-popout-dock-in {
@@ -421,6 +552,79 @@ body:has(.app-shell) {
   border-radius: 3px;
 }
 
+.settings-dev-window {
+  position: fixed;
+  left: calc(1rem + var(--dev-window-offset, 0) * 1.25rem);
+  bottom: calc(1rem + var(--dev-window-offset, 0) * 1.25rem);
+  z-index: calc(35 + var(--dev-window-offset, 0));
+  width: min(calc(100vw - 2rem), 24rem);
+  max-height: min(78vh, 40rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 12, 18, 0.96);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-hud);
+  animation: settings-dev-window-in 180ms ease;
+}
+
+@keyframes settings-dev-window-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.settings-dev-window-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.settings-dev-window-eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.settings-dev-window-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.settings-dev-window-body {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.settings-dev-window-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-dev-window-body::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 140, 0.4);
+  border-radius: 3px;
+}
+
 .settings-list {
   display: flex;
   flex-direction: column;
@@ -434,6 +638,42 @@ body:has(.app-shell) {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: rgba(147, 197, 253, 0.65);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0 0 0.75rem;
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(244, 244, 245, 0.72);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.settings-tab:hover,
+.settings-tab:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(147, 197, 253, 0.22);
+  color: rgba(244, 244, 245, 0.9);
+}
+
+.settings-tab--active {
+  border-color: rgba(147, 197, 253, 0.35);
+  background: rgba(147, 197, 253, 0.12);
+  color: rgba(191, 219, 254, 0.98);
 }
 
 .settings-group-label:first-child {
@@ -741,4 +981,89 @@ body:has(.app-shell) {
 .binding-row--fixed .binding-key:hover {
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.2);
+}
+
+/* Full-screen death overlay — GE2 two-phase sequence (hold → post-respawn fade). */
+.deathOverlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0;
+  background-image: url("/ui/death_overlay.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deathOverlay.deathOverlayActive {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 200ms ease-in;
+}
+
+.deathOverlay.deathOverlayFading {
+  pointer-events: none;
+  animation: deathOverlayFadeOut 1.2s ease-out forwards;
+}
+
+.deathOverlayInner {
+  text-align: center;
+  transform: translateY(-6vh);
+}
+
+.deathOverlayTitle {
+  font-family: var(--font-hud);
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 900;
+  letter-spacing: 0.32em;
+  color: #e6d8c0;
+  margin: 0;
+}
+
+.deathOverlayReason {
+  font-family: var(--font-hud);
+  font-size: clamp(0.7rem, 1vw, 0.9rem);
+  font-weight: 500;
+  color: #cfc0a4;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin: 0.85rem 0 0 0;
+  opacity: 0.9;
+}
+
+.deathOverlayHint {
+  font-family: var(--font-hud);
+  font-size: clamp(0.6rem, 0.8vw, 0.75rem);
+  font-weight: 400;
+  color: #a09880;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 2.5rem 0 0 0;
+  opacity: 0;
+  animation: deathHintFadeIn 0.6s ease-out 0.8s forwards;
+}
+
+@keyframes deathHintFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 0.75;
+    transform: translateY(0);
+  }
+}
+
+@keyframes deathOverlayFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }

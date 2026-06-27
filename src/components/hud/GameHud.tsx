@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import HudCompass from "@/components/hud/HudCompass";
 import HudPrimaryWeaponStack from "@/components/hud/HudPrimaryWeaponStack";
 import HudSecondaryWeaponStack from "@/components/hud/HudSecondaryWeaponStack";
@@ -25,8 +25,11 @@ import {
 type GameHudProps = {
   visible: boolean;
   getYaw: () => number;
-  getFps?: () => number;
   onOpenSettings: () => void;
+  levelName?: string;
+  objective?: string;
+  hostileCount?: number;
+  missionSeconds?: number;
   activePrimaryWeapon?: PrimaryWeaponId;
   selectedWeaponSlot?: number;
   grenadeCount?: number;
@@ -36,11 +39,21 @@ type GameHudProps = {
 
 const HB_CORNER_PX = 3;
 
+function formatMissionTimer(totalSecs: number): string {
+  const safeSecs = Math.max(0, Math.floor(totalSecs));
+  const minutes = Math.floor(safeSecs / 60);
+  const seconds = safeSecs % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 export default function GameHud({
   visible,
   getYaw,
-  getFps,
   onOpenSettings,
+  levelName = "Square Arena",
+  objective = "HOLD ZONE",
+  hostileCount = 0,
+  missionSeconds = 0,
   activePrimaryWeapon = "rifle",
   selectedWeaponSlot = GRENADE_WEAPON_SLOT,
   grenadeCount = 0,
@@ -52,7 +65,6 @@ export default function GameHud({
   const compassMarkersRef = useRef<HTMLDivElement>(null);
   const compassBlipsRef = useRef<HTMLDivElement>(null);
   const compassMetricsRef = useRef(createCompassMetricsCache());
-  const [fps, setFps] = useState(0);
 
   const barLayout = DEFAULT_HUD_BAR_LAYOUT;
   const bottomBarLayout = DEFAULT_HUD_BOTTOM_BAR_LAYOUT;
@@ -74,15 +86,12 @@ export default function GameHud({
         compassTapeRef.current,
         compassMetricsRef.current,
       );
-      if (getFps) {
-        setFps(Math.round(getFps()));
-      }
       frameId = requestAnimationFrame(tick);
     };
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [visible, getYaw, getFps]);
+  }, [visible, getYaw]);
 
   if (!visible) {
     return null;
@@ -118,7 +127,7 @@ export default function GameHud({
           type="button"
           className="hud-gear-btn"
           aria-label="Open settings"
-          title="Settings (Esc)"
+          title="Settings"
           onClick={onOpenSettings}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -193,9 +202,17 @@ export default function GameHud({
         <strong className="hud-score-value">0</strong>
       </div>
 
-      <div className="hud-fps-panel" role="status" aria-label="Frames per second">
-        <strong className="hud-fps-value">{fps}</strong>
-        <span className="hud-fps-label">FPS</span>
+      <div className="hudMissionInfo" role="status" aria-label="Mission status">
+        <div className="hudMissionLevel">{levelName}</div>
+        <div className="hudMissionObjective">OBJECTIVE: {objective}</div>
+        <div className="hudMissionStats">
+          <span className="hudMissionStat">
+            HOSTILES: <strong>{String(hostileCount).padStart(2, "0")}</strong>
+          </span>
+          <span className="hudMissionStat">
+            TIMER: <strong>{formatMissionTimer(missionSeconds)}</strong>
+          </span>
+        </div>
       </div>
 
       <HudCompass

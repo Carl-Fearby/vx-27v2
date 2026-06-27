@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Color4,
   Engine,
@@ -13,13 +13,34 @@ import {
   Scene,
   Vector3,
 } from "@babylonjs/core";
-import { createOutdoorSky, type OutdoorSky } from "@/lib/lighting/createOutdoorSky";
-import { createPlayerFlashlight, type PlayerFlashlight } from "@/lib/lighting/createPlayerFlashlight";
-import { createTileableFloorMaterial } from "@/lib/floor/createTileableFloorMaterial";
 import {
-  FLOOR_ALBEDO_TINT,
-  FLOOR_PLATFORM_SIZE,
-} from "@/lib/floor/floorAssets";
+  createOutdoorSky,
+  type OutdoorSky,
+  type SkyTuningPreviewMode,
+} from "@/lib/lighting/createOutdoorSky";
+import { createPlayerFlashlight, type PlayerFlashlight } from "@/lib/lighting/createPlayerFlashlight";
+import { createMotionBlur, type SceneMotionBlur } from "@/lib/postProcess/createMotionBlur";
+import {
+  applyRainWetnessToFloor,
+  createRainSystem,
+  disposeRainSystem,
+  floorWetnessNeedsFillExclusion,
+  rainCanvasFilter,
+  updateRainSystem,
+  type RainSystem,
+} from "@/lib/weather/rain";
+import { createTileableFloorMaterial } from "@/lib/floor/createTileableFloorMaterial";
+import { createFloorWithHoles } from "@/lib/floor/createFloorWithHoles";
+import DeathOverlay from "@/components/DeathOverlay";
+import { FLOOR_ALBEDO_TINT } from "@/lib/floor/floorAssets";
+import { DEATH_FADE_MS, DEATH_MIN_DISPLAY_MS } from "@/lib/floor/floorHoles";
+import { createIndustrialWallMaterial } from "@/lib/wall/createIndustrialWallMaterial";
+import { createArenaPerimeterWalls } from "@/lib/wall/createArenaWalls";
+import { createEastWallCatwalk } from "@/lib/wall/createEastWallCatwalk";
+import {
+  createCatwalkDeckMaterial,
+  createCatwalkEdgeMaterial,
+} from "@/lib/catwalk/createCatwalkMaterials";
 import { createHazardPillarMaterial } from "@/lib/pillar/createHazardPillarMaterial";
 import {
   PILLAR_DIAMETER,
@@ -33,7 +54,13 @@ import {
   type BindingAction,
   type KeyBindingsMap,
 } from "@/lib/keyBindings";
-import { applyFloorSurfaceTuning, applyPillarSurfaceTuning } from "@/lib/materialEdit/applySurfaceTuning";
+import {
+  applyFloorSurfaceTuning,
+  applyPillarSurfaceTuning,
+  applyWallSurfaceTuning,
+  applyCatwalkDeckSurfaceTuning,
+  applyCatwalkEdgeSurfaceTuning,
+} from "@/lib/materialEdit/applySurfaceTuning";
 import type {
   EditableSurfaceId,
   SurfaceTuningState,
@@ -41,6 +68,7 @@ import type {
 import { pickEditableSurfaceAtPointer, tagEditableSurface } from "@/lib/scene/pickEditableSurface";
 import type { OutdoorLightingTuning } from "@/lib/lighting/outdoorLightingTuning";
 import type { FlashlightTuning } from "@/lib/lighting/flashlightTuning";
+import type { MotionBlurTuning } from "@/lib/postProcess/motionBlurTuning";
 import type { GameSettings } from "@/lib/settings";
 import {
   safeExitPointerLock,
@@ -48,6 +76,13 @@ import {
   schedulePointerLockRecapture,
 } from "@/lib/pointerLock";
 import type { PlayerCoords } from "@/lib/playerCoords";
+import {
+  collisionTrimmedMove,
+  createPlayerCollisionFootprintDebug,
+  PLAYER_COLLISION_HALF_HEIGHT,
+  PLAYER_COLLISION_RADIUS,
+  playerFootY,
+} from "@/lib/player/playerCollision";
 
 type FpsSceneProps = Pick<
   GameSettings,
@@ -61,17 +96,24 @@ type FpsSceneProps = Pick<
   | "walkBobEnabled"
   | "walkBobAmplitudeCm"
   | "walkBobDurationSec"
+  | "showPlayerCollisionFootprint"
+  | "rainEnabled"
+  | "rainIntensity"
 > & {
   bindings: KeyBindingsMap;
   outdoorTuning: OutdoorLightingTuning;
   flashlightTuning: FlashlightTuning;
+  motionBlurTuning: MotionBlurTuning;
   paused: boolean;
+  pointerLockBlocked: boolean;
   materialEditMode: boolean;
   surfaceTuning: SurfaceTuningState;
   onSurfacePick?: (surfaceId: EditableSurfaceId) => void;
   onToggleMaterialEditMode?: () => void;
   onPlayerCoords?: (coords: PlayerCoords) => void;
-  onFps?: (fps: number) => void;
+  skyPreviewModeRef?: React.MutableRefObject<
+    ((mode: SkyTuningPreviewMode) => void) | null
+  >;
 };
 
 function toMouseLookDelta(
@@ -129,32 +171,75 @@ function isSceneBindingCode(bindings: KeyBindingsMap, code: string): boolean {
   );
 }
 
+/** Sky/celestial = 0, arena geometry = 1 so walls paint over sun billboards. */
+const WORLD_RENDERING_GROUP = 1;
+
 export default function FpsScene(props: FpsSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameCoreRef = useRef<GameCoreInstance | null>(null);
+  const [deathVisible, setDeathVisible] = useState(false);
+  const [deathReason, setDeathReason] = useState("");
+  const [deathMinDisplayEnd, setDeathMinDisplayEnd] = useState(0);
+  const [deathFading, setDeathFading] = useState(false);
+  const deathVisibleRef = useRef(false);
+  const deathFadingRef = useRef(false);
   const settingsRef = useRef(props);
   const outdoorTuningRef = useRef(props.outdoorTuning);
   const flashlightTuningRef = useRef(props.flashlightTuning);
+  const motionBlurTuningRef = useRef(props.motionBlurTuning);
   const pausedRef = useRef(props.paused);
+  const pointerLockBlockedRef = useRef(props.pointerLockBlocked);
   const materialEditModeRef = useRef(props.materialEditMode);
   const surfaceTuningRef = useRef(props.surfaceTuning);
   const onSurfacePickRef = useRef(props.onSurfacePick);
   const onPlayerCoordsRef = useRef(props.onPlayerCoords);
-  const onFpsRef = useRef(props.onFps);
   const onToggleEditModeRef = useRef<(() => void) | null>(null);
   const bindingsRef = useRef(props.bindings);
   const wasPausedRef = useRef(props.paused);
+  const skyPreviewModeRef = useRef(props.skyPreviewModeRef);
 
-  settingsRef.current = props;
-  bindingsRef.current = props.bindings;
-  outdoorTuningRef.current = props.outdoorTuning;
-  flashlightTuningRef.current = props.flashlightTuning;
-  pausedRef.current = props.paused;
-  materialEditModeRef.current = props.materialEditMode;
-  surfaceTuningRef.current = props.surfaceTuning;
-  onSurfacePickRef.current = props.onSurfacePick;
-  onPlayerCoordsRef.current = props.onPlayerCoords;
-  onFpsRef.current = props.onFps;
+  useEffect(() => {
+    deathVisibleRef.current = deathVisible;
+  }, [deathVisible]);
+
+  useEffect(() => {
+    deathFadingRef.current = deathFading;
+  }, [deathFading]);
+
+  const handleDeathFadeComplete = useCallback(() => {
+    setDeathFading(false);
+    gameCoreRef.current?.finish_death_overlay();
+  }, []);
+
+  const handleDeathRespawn = useCallback(() => {
+    const gameCore = gameCoreRef.current;
+    if (!gameCore) {
+      return false;
+    }
+    const now = performance.now();
+    if (!gameCore.plan_player_respawn(now, DEATH_FADE_MS)) {
+      return false;
+    }
+    setDeathVisible(false);
+    setDeathFading(true);
+    return true;
+  }, []);
+
+  useEffect(() => {
+    settingsRef.current = props;
+    bindingsRef.current = props.bindings;
+    outdoorTuningRef.current = props.outdoorTuning;
+    flashlightTuningRef.current = props.flashlightTuning;
+    motionBlurTuningRef.current = props.motionBlurTuning;
+    pausedRef.current = props.paused;
+    pointerLockBlockedRef.current = props.pointerLockBlocked;
+    materialEditModeRef.current = props.materialEditMode;
+    surfaceTuningRef.current = props.surfaceTuning;
+    onSurfacePickRef.current = props.onSurfacePick;
+    onPlayerCoordsRef.current = props.onPlayerCoords;
+    onToggleEditModeRef.current = props.onToggleMaterialEditMode ?? null;
+    skyPreviewModeRef.current = props.skyPreviewModeRef;
+  });
 
   useEffect(() => {
     const gameCore = gameCoreRef.current;
@@ -194,10 +279,13 @@ export default function FpsScene(props: FpsSceneProps) {
     let scene: Scene | null = null;
     let outdoorSky: OutdoorSky | null = null;
     let flashlight: PlayerFlashlight | null = null;
+    let motionBlur: SceneMotionBlur | null = null;
+    let rain: RainSystem | null = null;
     const editableMaterials: Partial<Record<EditableSurfaceId, PBRMaterial>> = {};
     let appliedTuningSnapshot = "";
     let appliedOutdoorTuningSnapshot = "";
     let appliedFlashlightTuningSnapshot = "";
+    let appliedMotionBlurTuningSnapshot = "";
 
     const cleanupFns: Array<() => void> = [];
 
@@ -207,23 +295,39 @@ export default function FpsScene(props: FpsSceneProps) {
 
     const applyAllSurfaceTuning = () => {
       const tuning = surfaceTuningRef.current;
-      if (!tuning?.floor || !tuning?.pillar) {
+      if (!tuning) {
         return;
       }
-      if (editableMaterials.floor) {
+      if (editableMaterials.floor && tuning.floor) {
         applyFloorSurfaceTuning(
           editableMaterials.floor,
           tuning.floor,
           FLOOR_ALBEDO_TINT,
         );
       }
-      if (editableMaterials.pillar) {
+      if (editableMaterials.pillar && tuning.pillar) {
         applyPillarSurfaceTuning(editableMaterials.pillar, tuning.pillar, {
           r: 1,
           g: 1,
           b: 1,
         });
       }
+      if (editableMaterials.wall && tuning.wall) {
+        applyWallSurfaceTuning(editableMaterials.wall, tuning.wall);
+      }
+      if (editableMaterials.catwalkDeck && tuning.catwalkDeck) {
+        applyCatwalkDeckSurfaceTuning(
+          editableMaterials.catwalkDeck,
+          tuning.catwalkDeck,
+        );
+      }
+      if (editableMaterials.catwalkEdge && tuning.catwalkEdge) {
+        applyCatwalkEdgeSurfaceTuning(
+          editableMaterials.catwalkEdge,
+          tuning.catwalkEdge,
+        );
+      }
+      applyRainWetnessToFloor(editableMaterials.floor, rain?.fade ?? 0);
     };
 
     void (async () => {
@@ -243,6 +347,7 @@ export default function FpsScene(props: FpsSceneProps) {
       });
 
       scene = new Scene(engine);
+      scene.collisionsEnabled = true;
       scene.clearColor = new Color4(0.72, 0.85, 0.94, 1);
       scene.imageProcessingConfiguration.toneMappingEnabled = true;
       scene.imageProcessingConfiguration.toneMappingType =
@@ -264,9 +369,19 @@ export default function FpsScene(props: FpsSceneProps) {
       camera.rotation.x = -gameCore.pitch();
       camera.rotation.y = gameCore.yaw();
       camera.applyGravity = false;
-      camera.checkCollisions = false;
+      camera.checkCollisions = true;
+      camera.ellipsoid = new Vector3(
+        PLAYER_COLLISION_RADIUS,
+        PLAYER_COLLISION_HALF_HEIGHT,
+        PLAYER_COLLISION_RADIUS,
+      );
+      camera.ellipsoidOffset = new Vector3(0, -PLAYER_COLLISION_HALF_HEIGHT, 0);
       camera.inputs.clear();
       scene.activeCamera = camera;
+
+      motionBlur = createMotionBlur(scene, camera, motionBlurTuningRef.current);
+      appliedMotionBlurTuningSnapshot = JSON.stringify(motionBlurTuningRef.current);
+      rain = createRainSystem(scene);
 
       outdoorSky = await createOutdoorSky(scene, camera);
       if (disposed || !canvas) {
@@ -274,9 +389,28 @@ export default function FpsScene(props: FpsSceneProps) {
         return;
       }
 
-      const [floorMaterial, pillarMaterial] = await Promise.all([
+      const previewModeBridge = skyPreviewModeRef.current;
+      if (previewModeBridge) {
+        previewModeBridge.current = (mode) => {
+          outdoorSky?.setTuningPreviewMode(mode);
+        };
+        registerCleanup(() => {
+          previewModeBridge.current = null;
+        });
+      }
+
+      const [
+        floorMaterial,
+        pillarMaterial,
+        wallMaterial,
+        catwalkDeckMaterial,
+        catwalkEdgeMaterial,
+      ] = await Promise.all([
         createTileableFloorMaterial(scene),
         createHazardPillarMaterial(scene),
+        createIndustrialWallMaterial(scene),
+        createCatwalkDeckMaterial(scene),
+        createCatwalkEdgeMaterial(scene),
       ]);
       if (disposed || !canvas) {
         return;
@@ -284,16 +418,14 @@ export default function FpsScene(props: FpsSceneProps) {
 
       editableMaterials.floor = floorMaterial;
       editableMaterials.pillar = pillarMaterial;
+      editableMaterials.wall = wallMaterial;
+      editableMaterials.catwalkDeck = catwalkDeckMaterial;
+      editableMaterials.catwalkEdge = catwalkEdgeMaterial;
       applyAllSurfaceTuning();
       appliedTuningSnapshot = JSON.stringify(surfaceTuningRef.current);
 
-      const platform = MeshBuilder.CreateGround(
-        "platform",
-        { width: FLOOR_PLATFORM_SIZE, height: FLOOR_PLATFORM_SIZE },
-        scene,
-      );
+      const platform = createFloorWithHoles(scene, floorMaterial);
       tagEditableSurface(platform, "floor");
-      platform.material = floorMaterial;
       const pillar = MeshBuilder.CreateCylinder(
         "pillar",
         { height: PILLAR_HEIGHT, diameter: PILLAR_DIAMETER, tessellation: 32 },
@@ -302,14 +434,63 @@ export default function FpsScene(props: FpsSceneProps) {
       tagEditableSurface(pillar, "pillar");
       pillar.position = new Vector3(6, PILLAR_HEIGHT / 2, 2);
       pillar.material = pillarMaterial;
+      pillar.checkCollisions = true;
+
+      const arenaWalls = createArenaPerimeterWalls(scene, wallMaterial);
+      const eastCatwalk = createEastWallCatwalk(
+        scene,
+        catwalkDeckMaterial,
+        catwalkEdgeMaterial,
+      );
+      const arenaStructures = [...arenaWalls, ...eastCatwalk];
+      for (const wall of arenaWalls) {
+        tagEditableSurface(wall, "wall");
+      }
+      tagEditableSurface(eastCatwalk[0], "catwalkDeck");
+      for (const rail of eastCatwalk.slice(1)) {
+        tagEditableSurface(rail, "catwalkEdge");
+      }
+      for (const mesh of [platform, pillar, ...arenaStructures]) {
+        mesh.renderingGroupId = WORLD_RENDERING_GROUP;
+      }
+      const shadowReceivers = [platform, pillar, ...arenaStructures];
+      /** Floor receives only — casting from the deck onto itself breaks sun/moon shadows. */
+      const shadowCasters = [pillar, ...arenaStructures];
+
+      const playerCollider = MeshBuilder.CreateSphere(
+        "playerCollisionProbe",
+        { diameter: PLAYER_COLLISION_RADIUS * 2, segments: 8 },
+        scene,
+      );
+      playerCollider.isVisible = false;
+      playerCollider.isPickable = false;
+      playerCollider.ellipsoid = new Vector3(
+        PLAYER_COLLISION_RADIUS,
+        PLAYER_COLLISION_HALF_HEIGHT,
+        PLAYER_COLLISION_RADIUS,
+      );
+      playerCollider.ellipsoidOffset = new Vector3(
+        0,
+        -PLAYER_COLLISION_HALF_HEIGHT,
+        0,
+      );
+
+      const collisionFootprintDebug = createPlayerCollisionFootprintDebug(scene);
 
       outdoorSky.shadows.addReceiver(platform);
-      outdoorSky.shadows.addReceiver(pillar);
-      outdoorSky.shadows.addCaster(pillar);
-      await outdoorSky.shadows.prepareReceiverShaders([platform, pillar]);
-      flashlight = createPlayerFlashlight(scene, [platform, pillar]);
+      for (const mesh of shadowReceivers) {
+        outdoorSky.shadows.addReceiver(mesh);
+      }
+      for (const mesh of shadowCasters) {
+        outdoorSky.shadows.addCaster(mesh);
+      }
+      outdoorSky.excludeMeshesFromFillLights(arenaWalls);
+      let fillExcludesWetFloor = false;
+      flashlight = createPlayerFlashlight(scene, shadowReceivers);
       flashlight.applyTuning(flashlightTuningRef.current);
       appliedFlashlightTuningSnapshot = JSON.stringify(flashlightTuningRef.current);
+      await outdoorSky.shadows.prepareReceiverShaders(shadowReceivers);
+      await flashlight.prepareShadowShaders(shadowReceivers);
 
       if (!scene) {
         return;
@@ -394,7 +575,7 @@ export default function FpsScene(props: FpsSceneProps) {
       });
 
       const onKeyDown = (event: KeyboardEvent) => {
-        if (pausedRef.current) {
+        if (pausedRef.current || deathVisibleRef.current) {
           return;
         }
 
@@ -450,7 +631,11 @@ export default function FpsScene(props: FpsSceneProps) {
       };
 
       const onMouseMove = (event: MouseEvent) => {
-        if (pausedRef.current || materialEditModeRef.current) {
+        if (
+          pausedRef.current ||
+          materialEditModeRef.current ||
+          deathVisibleRef.current
+        ) {
           return;
         }
 
@@ -470,7 +655,9 @@ export default function FpsScene(props: FpsSceneProps) {
       const onCanvasClick = () => {
         if (
           pausedRef.current ||
+          pointerLockBlockedRef.current ||
           materialEditModeRef.current ||
+          deathVisibleRef.current ||
           document.pointerLockElement === canvas
         ) {
           return;
@@ -500,6 +687,14 @@ export default function FpsScene(props: FpsSceneProps) {
         canvas.removeEventListener("click", onCanvasClick);
       });
 
+      let prevMotionYaw = gameCore.yaw();
+      let prevMotionPitch = gameCore.pitch() + gameCore.walk_bob_pitch();
+      const previousCorePosition = new Vector3();
+      const collisionDisplacement = new Vector3();
+      let collisionBlockedThisFrame = false;
+
+      registerCleanup(() => collisionFootprintDebug.dispose());
+
       engine.runRenderLoop(() => {
         if (!gameCore || !scene) {
           return;
@@ -518,15 +713,68 @@ export default function FpsScene(props: FpsSceneProps) {
           appliedTuningSnapshot = tuningJson;
         }
 
-        let deltaSeconds = 0;
-        if (!pausedRef.current) {
+        const deltaSeconds = engine!.getDeltaTime() / 1000;
+        if (!pausedRef.current && !deathVisibleRef.current) {
           syncGameCoreInput(gameCore, bindingsRef.current, pressedCodes);
-          deltaSeconds = engine!.getDeltaTime() / 1000;
+          previousCorePosition.set(
+            gameCore.position_x(),
+            gameCore.position_y(),
+            gameCore.position_z(),
+          );
           gameCore.tick(deltaSeconds);
+          collisionBlockedThisFrame = false;
+
+          if (!gameCore.falling_through_hole()) {
+            playerCollider.position.copyFrom(previousCorePosition);
+            collisionDisplacement.set(
+              gameCore.position_x() - previousCorePosition.x,
+              0,
+              gameCore.position_z() - previousCorePosition.z,
+            );
+            playerCollider.moveWithCollisions(collisionDisplacement);
+            collisionBlockedThisFrame = collisionTrimmedMove(
+              previousCorePosition,
+              collisionDisplacement,
+              playerCollider.position,
+            );
+            gameCore.sync_player_position(
+              playerCollider.position.x,
+              gameCore.position_y(),
+              playerCollider.position.z,
+            );
+            gameCore.try_begin_hole_fall();
+          }
+
+          if (gameCore.should_die_from_fall()) {
+            const now = performance.now();
+            if (gameCore.apply_player_death("fall", now, DEATH_MIN_DISPLAY_MS)) {
+              safeExitPointerLock();
+              setDeathReason(gameCore.death_reason());
+              setDeathMinDisplayEnd(gameCore.death_min_display_end_ms());
+              setDeathVisible(true);
+            }
+          }
+
           outdoorSky?.tickDayNight(deltaSeconds);
         }
 
         outdoorSky?.update(camera);
+        if (rain) {
+          updateRainSystem(rain, camera, deltaSeconds, {
+            enabled: settingsRef.current.rainEnabled,
+            intensity: settingsRef.current.rainIntensity,
+          });
+          applyRainWetnessToFloor(editableMaterials.floor, rain.fade);
+          canvas.style.filter = rainCanvasFilter(rain.fade);
+
+          const wetFloor = floorWetnessNeedsFillExclusion(rain.fade);
+          if (wetFloor !== fillExcludesWetFloor) {
+            fillExcludesWetFloor = wetFloor;
+            outdoorSky?.excludeMeshesFromFillLights(
+              wetFloor ? [platform, ...arenaWalls] : arenaWalls,
+            );
+          }
+        }
         const outdoorTuningJson = JSON.stringify(outdoorTuningRef.current);
         if (outdoorTuningJson !== appliedOutdoorTuningSnapshot) {
           outdoorSky?.applyOutdoorTuning(outdoorTuningRef.current);
@@ -539,6 +787,12 @@ export default function FpsScene(props: FpsSceneProps) {
           appliedFlashlightTuningSnapshot = flashlightTuningJson;
         }
 
+        const motionBlurTuningJson = JSON.stringify(motionBlurTuningRef.current);
+        if (motionBlurTuningJson !== appliedMotionBlurTuningSnapshot) {
+          motionBlur?.applyTuning(motionBlurTuningRef.current);
+          appliedMotionBlurTuningSnapshot = motionBlurTuningJson;
+        }
+
         camera.position.x = gameCore.position_x();
         camera.position.y = gameCore.position_y() + gameCore.walk_bob_y();
         camera.position.z = gameCore.position_z();
@@ -548,6 +802,19 @@ export default function FpsScene(props: FpsSceneProps) {
           -(gameCore.pitch() + gameCore.walk_bob_pitch()),
           gameCore.walk_bob_roll(),
         );
+
+        const lookYaw = gameCore.yaw();
+        const lookPitch = gameCore.pitch() + gameCore.walk_bob_pitch();
+        if (!pausedRef.current) {
+          motionBlur?.setCameraMotion(
+            lookYaw - prevMotionYaw,
+            lookPitch - prevMotionPitch,
+          );
+        } else {
+          motionBlur?.setCameraMotion(0, 0);
+        }
+        prevMotionYaw = lookYaw;
+        prevMotionPitch = lookPitch;
 
         if (!pausedRef.current) {
           flashlight?.syncFromGameCore(
@@ -565,7 +832,17 @@ export default function FpsScene(props: FpsSceneProps) {
           pitch: gameCore.pitch(),
         });
 
-        onFpsRef.current?.(engine!.getFps());
+        const showCollisionFootprint =
+          settingsRef.current.showPlayerCollisionFootprint;
+        collisionFootprintDebug.setEnabled(showCollisionFootprint);
+        if (showCollisionFootprint) {
+          collisionFootprintDebug.sync(
+            gameCore.position_x(),
+            playerFootY(gameCore.position_y(), gameCore.eye_height()),
+            gameCore.position_z(),
+            collisionBlockedThisFrame,
+          );
+        }
 
         scene.render();
       });
@@ -581,6 +858,9 @@ export default function FpsScene(props: FpsSceneProps) {
       safeExitPointerLock();
 
       outdoorSky?.dispose();
+      motionBlur?.dispose();
+      disposeRainSystem(rain);
+      canvas.style.filter = "";
       flashlight?.dispose();
       scene?.dispose();
       engine?.dispose();
@@ -589,29 +869,43 @@ export default function FpsScene(props: FpsSceneProps) {
     };
   }, []);
 
-  onToggleEditModeRef.current = props.onToggleMaterialEditMode ?? null;
-
   useEffect(() => {
-    if (props.paused) {
+    if (props.paused || props.pointerLockBlocked) {
       safeExitPointerLock();
     }
-  }, [props.paused]);
+  }, [props.paused, props.pointerLockBlocked]);
 
   useEffect(() => {
-    if (wasPausedRef.current && !props.paused && !props.materialEditMode) {
+    if (
+      wasPausedRef.current &&
+      !props.paused &&
+      !props.pointerLockBlocked &&
+      !props.materialEditMode
+    ) {
       const canvas = canvasRef.current;
       if (canvas) {
         schedulePointerLockRecapture(canvas);
       }
     }
     wasPausedRef.current = props.paused;
-  }, [props.paused, props.materialEditMode]);
+  }, [props.paused, props.pointerLockBlocked, props.materialEditMode]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={`babylon-canvas${props.materialEditMode ? " babylon-canvas--edit-mode" : ""}`}
-      tabIndex={0}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className={`babylon-canvas${props.materialEditMode ? " babylon-canvas--edit-mode" : ""}`}
+        tabIndex={0}
+      />
+      <DeathOverlay
+        canvasRef={canvasRef}
+        visible={deathVisible}
+        reason={deathReason}
+        minDisplayEnd={deathMinDisplayEnd}
+        fading={deathFading}
+        onRespawn={handleDeathRespawn}
+        onFadeComplete={handleDeathFadeComplete}
+      />
+    </>
   );
 }

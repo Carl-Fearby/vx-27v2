@@ -1,5 +1,5 @@
-import GameShell from "@/components/GameShell";
+import GameEntry from "@/components/GameEntry";
 
 export default function GamePage() {
-  return <GameShell />;
+  return <GameEntry />;
 }

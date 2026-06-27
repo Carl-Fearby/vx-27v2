@@ -10,9 +10,9 @@ const CROUCH_SPEED_MULT: f32 = 0.5;
 const CROUCH_EYE_RATIO: f32 = 0.55;
 /// Full crouch down / stand up transition (ease-in-out).
 const CROUCH_TRANSITION_SEC: f32 = 0.32;
-const GRAVITY: f32 = 18.0;
-/// Apex ~0.4 m within the 0.35–0.45 m band (`sqrt(2 * 18 * 0.4)`).
-const JUMP_VELOCITY: f32 = 3.7947332;
+const GRAVITY: f32 = 22.0;
+/// Mirrors GE2 `PlayerController.js` jump impulse.
+const JUMP_VELOCITY: f32 = 8.5;
 const MAX_PITCH: f32 = 1.48;
 const WALK_BOB_AMPLITUDE_CM: f32 = 18.6;
 const WALK_BOB_DURATION_SEC: f32 = 0.41;
@@ -55,6 +55,8 @@ pub struct PlayerState {
     walk_bob_phase: f32,
     walk_bob_activity: f32,
     crouch_blend: CrouchBlend,
+    pub falling_through_hole: bool,
+    pub hole_fall_vel_y: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -139,7 +141,26 @@ impl Default for PlayerState {
             walk_bob_phase: 0.0,
             walk_bob_activity: 0.0,
             crouch_blend: CrouchBlend::default(),
+            falling_through_hole: false,
+            hole_fall_vel_y: -2.0,
         }
+    }
+}
+
+impl PlayerState {
+    pub fn foot_y(&self) -> f32 {
+        self.y - self.eye_height
+    }
+
+    pub fn set_foot_y(&mut self, foot_y: f32) {
+        self.y = foot_y + self.eye_height;
+    }
+
+    pub fn begin_hole_fall(&mut self) {
+        self.falling_through_hole = true;
+        self.hole_fall_vel_y = -2.0;
+        self.on_ground = false;
+        self.velocity_y = self.hole_fall_vel_y;
     }
 }
 
@@ -320,6 +341,15 @@ impl PlayerState {
 
     pub fn tick(&mut self, input: &InputState, delta_seconds: f32, world: &super::world::World) {
         self.apply_look_input(input, delta_seconds);
+
+        if self.falling_through_hole {
+            world.tick_hole_fall(self, delta_seconds);
+            self.walk_bob_y = 0.0;
+            self.walk_bob_pitch = 0.0;
+            self.walk_bob_roll = 0.0;
+            self.walk_bob_activity = 0.0;
+            return;
+        }
 
         let mut move_x = 0.0;
         let mut move_z = 0.0;
@@ -623,7 +653,7 @@ mod tests {
             peak = peak.max(player.y);
         }
 
-        assert!((peak - (start_y + 0.4)).abs() < 0.06);
+        assert!((peak - (start_y + 1.64)).abs() < 0.08);
     }
 
     #[test]

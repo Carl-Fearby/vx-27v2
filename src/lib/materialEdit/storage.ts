@@ -80,10 +80,13 @@ function sanitizeTuning(
 let sessionSurfaceTuning: SurfaceTuningState = {
   floor: { ...DEFAULT_SURFACE_TUNING.floor },
   pillar: { ...DEFAULT_SURFACE_TUNING.pillar },
+  wall: { ...DEFAULT_SURFACE_TUNING.wall },
+  catwalkDeck: { ...DEFAULT_SURFACE_TUNING.catwalkDeck },
+  catwalkEdge: { ...DEFAULT_SURFACE_TUNING.catwalkEdge },
 };
 
 /** Bumps when defaults change — clears stale in-memory edit-session values on hot reload. */
-const TUNING_SCHEMA_VERSION = 11;
+const TUNING_SCHEMA_VERSION = 17;
 let loadedTuningVersion = 0;
 
 function ensureTuningSchema() {
@@ -93,6 +96,9 @@ function ensureTuningSchema() {
   sessionSurfaceTuning = {
     floor: { ...DEFAULT_SURFACE_TUNING.floor },
     pillar: { ...DEFAULT_SURFACE_TUNING.pillar },
+    wall: { ...DEFAULT_SURFACE_TUNING.wall },
+    catwalkDeck: { ...DEFAULT_SURFACE_TUNING.catwalkDeck },
+    catwalkEdge: { ...DEFAULT_SURFACE_TUNING.catwalkEdge },
   };
   loadedTuningVersion = TUNING_SCHEMA_VERSION;
 }
@@ -102,6 +108,9 @@ export function loadSurfaceTuning(): SurfaceTuningState {
   return {
     floor: { ...sessionSurfaceTuning.floor },
     pillar: { ...sessionSurfaceTuning.pillar },
+    wall: { ...sessionSurfaceTuning.wall },
+    catwalkDeck: { ...sessionSurfaceTuning.catwalkDeck },
+    catwalkEdge: { ...sessionSurfaceTuning.catwalkEdge },
   };
 }
 
@@ -110,6 +119,15 @@ export function saveSurfaceTuning(state: SurfaceTuningState): SurfaceTuningState
   sessionSurfaceTuning = {
     floor: sanitizeTuning(state.floor, DEFAULT_SURFACE_TUNING.floor),
     pillar: sanitizeTuning(state.pillar, DEFAULT_SURFACE_TUNING.pillar),
+    wall: sanitizeTuning(state.wall, DEFAULT_SURFACE_TUNING.wall),
+    catwalkDeck: sanitizeTuning(
+      state.catwalkDeck,
+      DEFAULT_SURFACE_TUNING.catwalkDeck,
+    ),
+    catwalkEdge: sanitizeTuning(
+      state.catwalkEdge,
+      DEFAULT_SURFACE_TUNING.catwalkEdge,
+    ),
   };
   return loadSurfaceTuning();
 }

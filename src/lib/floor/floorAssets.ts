@@ -4,7 +4,11 @@ export const FLOOR_TEXTURE_ROOT = `/textures/${FLOOR_TEXTURE_ID}`;
 
 export const FLOOR_PLATFORM_SIZE = 40;
 export const FLOOR_TILE_WORLD_SIZE = 4;
-export const FLOOR_UV_SCALE = FLOOR_PLATFORM_SIZE / FLOOR_TILE_WORLD_SIZE;
+/** Material albedo/normal UV scale — world-space floor UVs use `FLOOR_TILE_WORLD_SIZE`. */
+export const FLOOR_UV_SCALE = 1.0;
+
+/** Extruded deck depth (top y=0, bottom y=-depth). */
+export const FLOOR_SLAB_DEPTH = 0.35;
 
 /** GE2 MeshStandardMaterial — neutral albedo, no tint boost. */
 export const FLOOR_ALBEDO_TINT = { r: 1, g: 1, b: 1 } as const;

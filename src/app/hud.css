@@ -10,7 +10,7 @@
 .hud-health-bar,
 .hud-stamina-cluster,
 .hud-score-panel,
-.hud-fps-panel,
+.hudMissionInfo,
 .hud-compass,
 .hud-second-weapon,
 .hud-primary-weapon {
@@ -330,32 +330,48 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hud-fps-panel {
+.hudMissionInfo {
   position: fixed;
   top: calc(1rem + min(5rem, 8vw) + 0.4rem);
   right: 1rem;
   z-index: 15;
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-  gap: 0.55em;
-  padding-right: 0.1rem;
+  text-align: right;
   pointer-events: none;
+  font-family: var(--font-futuristic), "Orbitron", "Eurostile", "Rajdhani", sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.hud-fps-label {
-  font-size: clamp(0.84rem, 1.7vw, 1.24rem);
+.hudMissionLevel {
+  font-size: clamp(0.58rem, 1.15vw, 0.82rem);
+  font-weight: 700;
+  color: rgba(220, 235, 255, 0.95);
+  text-shadow: 0 0 10px rgba(59, 123, 255, 0.45);
+  margin-bottom: 0.15em;
+}
+
+.hudMissionObjective {
+  font-size: clamp(0.5rem, 1vw, 0.72rem);
+  font-weight: 700;
+  color: rgba(94, 170, 255, 0.85);
+  margin-bottom: 0.2em;
+}
+
+.hudMissionStats {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1.5em;
+}
+
+.hudMissionStat {
+  font-size: clamp(0.42rem, 0.85vw, 0.62rem);
   font-weight: 500;
   color: rgba(94, 170, 255, 0.6);
 }
 
-.hud-fps-value {
-  font-size: clamp(1.16rem, 2.3vw, 1.64rem);
+.hudMissionStat strong {
   font-weight: 700;
-  color: rgba(220, 235, 255, 0.95);
-  text-shadow: 0 0 10px rgba(59, 123, 255, 0.45);
+  color: rgba(94, 170, 255, 0.9);
   font-variant-numeric: tabular-nums;
 }
 

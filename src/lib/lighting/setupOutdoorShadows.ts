@@ -9,8 +9,8 @@ import { FLOOR_PLATFORM_SIZE } from "@/lib/floor/floorAssets";
 
 /** Mirrors GameEngine2 SceneEnvironment.configureSunShadowMap. */
 const SUN_SHADOW_MAP_SIZE = 2048;
-const SUN_SHADOW_BIAS = -0.00035;
-const SUN_SHADOW_NORMAL_BIAS = 0;
+const SUN_SHADOW_BIAS = 0.00005;
+const SUN_SHADOW_NORMAL_BIAS = 0.015;
 const SUN_SHADOW_BLUR_KERNEL = 2;
 const SUN_SHADOW_PADDING = 1;
 
@@ -115,17 +115,22 @@ export function setupOutdoorShadows(
       mesh.receiveShadows = true;
     },
     async prepareReceiverShaders(meshes) {
-      sunShadow.forceCompilation();
-      moonShadow.forceCompilation();
-      await Promise.all(
-        meshes.map((mesh) => {
-          const material = mesh.material;
-          if (!material) {
-            return Promise.resolve();
-          }
-          return material.forceCompilationAsync(mesh, { clipPlane: false });
-        }),
-      );
+      await Promise.all([
+        sunShadow.forceCompilationAsync(),
+        moonShadow.forceCompilationAsync(),
+      ]);
+      const compiledMaterials = new Set<Mesh["material"]>();
+      for (const mesh of meshes) {
+        if (!mesh.receiveShadows) {
+          continue;
+        }
+        const material = mesh.material;
+        if (!material || compiledMaterials.has(material)) {
+          continue;
+        }
+        compiledMaterials.add(material);
+        await material.forceCompilationAsync(mesh, { clipPlane: false });
+      }
     },
     applyDirectionalShadows(sunOn, moonOn, shadowDepth = 1) {
       const darkness = shadowDepthToDarkness(shadowDepth);

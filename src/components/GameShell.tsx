@@ -6,13 +6,16 @@ import GameHud from "@/components/hud/GameHud";
 import MaterialEditPanel from "@/components/MaterialEditPanel";
 import SettingsMenu from "@/components/SettingsMenu";
 import { useFlashlightTuning } from "@/hooks/useFlashlightTuning";
+import { useMotionBlurTuning } from "@/hooks/useMotionBlurTuning";
 import { useHudWeaponTuning } from "@/hooks/useHudWeaponTuning";
 import { useKeyBindings } from "@/hooks/useKeyBindings";
 import { useMaterialEdit } from "@/hooks/useMaterialEdit";
 import { useOutdoorLightingTuning } from "@/hooks/useOutdoorLightingTuning";
 import { useSettings } from "@/hooks/useSettings";
 import { useWeaponHudState } from "@/hooks/useWeaponHudState";
+import { setMusicEnabled } from "@/lib/audio/music";
 import { eventMatchesBinding, formatBindingValue } from "@/lib/keyBindings";
+import type { SkyTuningPreviewMode } from "@/lib/lighting/createOutdoorSky";
 import { safeExitPointerLock } from "@/lib/pointerLock";
 import type { PlayerCoords } from "@/lib/playerCoords";
 
@@ -30,6 +33,11 @@ export default function GameShell() {
     updateTuning: updateFlashlightTuning,
     resetTuning: resetFlashlightTuning,
   } = useFlashlightTuning();
+  const {
+    tuning: motionBlurTuning,
+    updateTuning: updateMotionBlurTuning,
+    resetTuning: resetMotionBlurTuning,
+  } = useMotionBlurTuning();
   const { tuning: hudWeaponTuning, updateTuning: updateHudWeaponTuning, resetTuning: resetHudWeaponTuning } =
     useHudWeaponTuning();
   const {
@@ -43,6 +51,12 @@ export default function GameShell() {
   } = useMaterialEdit();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSectionActive, setSettingsSectionActive] = useState(false);
+  const skyPreviewModeRef = useRef<
+    ((mode: SkyTuningPreviewMode) => void) | null
+  >(null);
+  const handleSkyPreviewModeChange = useCallback((mode: SkyTuningPreviewMode) => {
+    skyPreviewModeRef.current?.(mode);
+  }, []);
   const playerCoordsRef = useRef<PlayerCoords>({
     x: 0,
     y: 0,
@@ -50,19 +64,14 @@ export default function GameShell() {
     yaw: 0,
     pitch: 0,
   });
-  const fpsRef = useRef(0);
+  const [missionSeconds, setMissionSeconds] = useState(0);
+  const missionSecondsRef = useRef(0);
 
   const getPlayerCoords = useCallback(() => playerCoordsRef.current, []);
 
   const handlePlayerCoords = useCallback((coords: PlayerCoords) => {
     playerCoordsRef.current = coords;
   }, []);
-
-  const handleFps = useCallback((fps: number) => {
-    fpsRef.current = fps;
-  }, []);
-
-  const getFps = useCallback(() => fpsRef.current, []);
 
   const openSettings = useCallback(() => {
     safeExitPointerLock();
@@ -91,11 +100,64 @@ export default function GameShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [bindings, materialEditMode, openSettings, settingsOpen]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.code !== "KeyR" ||
+        event.repeat ||
+        settingsOpen ||
+        materialEditMode
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      updateSettings({ rainEnabled: !settings.rainEnabled });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    materialEditMode,
+    settings.rainEnabled,
+    settingsOpen,
+    updateSettings,
+  ]);
+
+  useEffect(() => {
+    setMusicEnabled(settings.musicEnabled, "level");
+  }, [settings.musicEnabled]);
+
+  const gamePaused = settingsOpen && !settingsSectionActive;
+
+  useEffect(() => {
+    if (gamePaused) {
+      return;
+    }
+
+    let frameId = 0;
+    let lastSeconds = -1;
+    const startedAt = performance.now() - missionSecondsRef.current * 1000;
+
+    const tick = () => {
+      const nextSeconds = Math.floor((performance.now() - startedAt) / 1000);
+      if (nextSeconds !== lastSeconds) {
+        lastSeconds = nextSeconds;
+        missionSecondsRef.current = nextSeconds;
+        setMissionSeconds(nextSeconds);
+      }
+      frameId = requestAnimationFrame(tick);
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [gamePaused]);
+
   const getYaw = useCallback(() => playerCoordsRef.current.yaw, []);
 
-  const hudVisible = !settingsOpen || settingsSectionActive;
+  const hudVisible = settings.hudVisible && !materialEditMode;
   const weaponHud = useWeaponHudState({
-    enabled: hudVisible && !materialEditMode,
+    enabled: hudVisible,
   });
 
   return (
@@ -105,19 +167,24 @@ export default function GameShell() {
         bindings={bindings}
         outdoorTuning={outdoorTuning}
         flashlightTuning={flashlightTuning}
+        motionBlurTuning={motionBlurTuning}
         paused={settingsOpen && !settingsSectionActive}
+        pointerLockBlocked={settingsOpen}
         materialEditMode={materialEditMode}
         surfaceTuning={surfaceTuning}
         onSurfacePick={setSelectedSurface}
         onToggleMaterialEditMode={toggleMaterialEditMode}
         onPlayerCoords={handlePlayerCoords}
-        onFps={handleFps}
+        skyPreviewModeRef={skyPreviewModeRef}
       />
       <GameHud
         visible={hudVisible}
         getYaw={getYaw}
-        getFps={getFps}
         onOpenSettings={openSettings}
+        levelName="Square Arena"
+        objective="HOLD ZONE"
+        hostileCount={0}
+        missionSeconds={missionSeconds}
         activePrimaryWeapon={weaponHud.activePrimaryWeapon}
         selectedWeaponSlot={weaponHud.selectedWeaponSlot}
         grenadeCount={weaponHud.grenadeCount}
@@ -148,9 +215,13 @@ export default function GameShell() {
         onOutdoorTuningChange={updateOutdoorTuning}
         onOutdoorTuningResetHemi={resetOutdoorTuningHemi}
         onOutdoorTuningResetAll={resetOutdoorTuningAll}
+        onSkyPreviewModeChange={handleSkyPreviewModeChange}
         flashlightTuning={flashlightTuning}
         onFlashlightTuningChange={updateFlashlightTuning}
         onFlashlightTuningReset={resetFlashlightTuning}
+        motionBlurTuning={motionBlurTuning}
+        onMotionBlurTuningChange={updateMotionBlurTuning}
+        onMotionBlurTuningReset={resetMotionBlurTuning}
         hudWeaponTuning={hudWeaponTuning}
         onHudWeaponTuningChange={updateHudWeaponTuning}
         onHudWeaponTuningReset={resetHudWeaponTuning}

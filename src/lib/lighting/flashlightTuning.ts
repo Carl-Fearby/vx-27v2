@@ -14,7 +14,7 @@ export type FlashlightTuning = {
 };
 
 export const SPREAD_ANGLE_MIN = 8;
-export const SPREAD_ANGLE_MAX = 45;
+export const SPREAD_ANGLE_MAX = 80;
 export const SPREAD_ANGLE_STEP = 1;
 
 export const PENUMBRA_MIN = 0;
@@ -38,9 +38,9 @@ export const RING_THICKNESS_MAX = 0.55;
 export const RING_THICKNESS_STEP = 0.005;
 
 export const DEFAULT_FLASHLIGHT_TUNING: FlashlightTuning = {
-  spreadAngleDeg: 45,
-  penumbra: 1,
-  intensityMultiplier: 10,
+  spreadAngleDeg: 51,
+  penumbra: 0.31,
+  intensityMultiplier: 9.5,
   haloBrightness: 0.35,
   haloWidth: 7.1,
   ringThickness: 0.01,
@@ -102,7 +102,7 @@ let sessionFlashlightTuning: FlashlightTuning = {
   ...DEFAULT_FLASHLIGHT_TUNING,
 };
 
-const FLASHLIGHT_TUNING_SCHEMA_VERSION = 3;
+const FLASHLIGHT_TUNING_SCHEMA_VERSION = 7;
 let loadedFlashlightTuningVersion = 0;
 
 function loadDevFlashlightTuning(): FlashlightTuning | null {

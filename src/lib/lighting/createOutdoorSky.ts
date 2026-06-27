@@ -17,6 +17,7 @@ import {
   Texture,
   TransformNode,
   Vector3,
+  type AbstractMesh,
   type Camera,
   type Nullable,
 } from "@babylonjs/core";
@@ -37,9 +38,7 @@ import {
   kelvinToRgb,
   lerp,
   lerpColor,
-  MOON_AZIMUTH_DEFAULT,
   MOON_DISC_SIZE,
-  MOON_ELEVATION_DEFAULT,
   MOON_TEXTURE_URL,
   NIGHT_CLEAR_COLOR,
   NIGHT_FOG_FAR,
@@ -51,11 +50,9 @@ import {
   SKY_MESH_RADIUS,
   SKY_NIGHT_URL,
   smoothstep,
-  SUN_AZIMUTH_DEFAULT,
   SUN_BOWL_RADIUS,
   SUN_CORE_SIZE,
   SUN_DISC_SIZE,
-  SUN_ELEVATION_DEFAULT,
   SUN_SPIKE_SIZE,
 } from "@/lib/lighting/tuning";
 import {
@@ -133,16 +130,22 @@ void main(void) {
 }
 `;
 
+export type SkyTuningPreviewMode = "day" | "night" | null;
+
 export type OutdoorSky = {
   root: TransformNode;
   update: (camera: Camera) => void;
   applyOutdoorTuning: (tuning: OutdoorLightingTuning) => void;
   tickDayNight: (deltaSeconds: number) => void;
   toggleDayNight: () => void;
+  /** Snap to day/night for sky tuning tabs — null restores saved dev mode. */
+  setTuningPreviewMode: (mode: SkyTuningPreviewMode) => void;
   isDay: () => boolean;
   getNightness: () => number;
   getSkyBlend: () => number;
   shadows: OutdoorShadows;
+  /** Keep shadowless fill off vertical arena surfaces so wall-to-wall sun shadows read. */
+  excludeMeshesFromFillLights: (meshes: AbstractMesh[]) => void;
   dispose: () => void;
 };
 
@@ -197,7 +200,8 @@ function createBillboard(
     material.alphaMode = Engine.ALPHA_ADD;
   }
   mesh.material = material;
-  configureCelestialMesh(mesh, material, true);
+  // LEQUAL — respect arena depth so sun discs don't bleed through walls.
+  configureCelestialMesh(mesh, material, false);
   return mesh;
 }
 
@@ -438,7 +442,18 @@ export async function createOutdoorSky(
   let targetNightness = isDayMode ? 0 : 1;
   let currentNightness = targetNightness;
   let currentSkyBlend = 0;
+  let tuningPreviewMode: SkyTuningPreviewMode = null;
   let outdoorTuning = loadOutdoorLightingTuning();
+
+  const resolveTargetNightness = () => {
+    if (tuningPreviewMode === "day") {
+      return 0;
+    }
+    if (tuningPreviewMode === "night") {
+      return 1;
+    }
+    return isDayMode ? 0 : 1;
+  };
 
   const initialSunRgb = kelvinToRgb(outdoorTuning.sunTemperature);
   sun.diffuse = new Color3(initialSunRgb.r, initialSunRgb.g, initialSunRgb.b);
@@ -456,7 +471,7 @@ export async function createOutdoorSky(
         temperature: lerp(dayHemi.temperature, nightHemi.temperature, nightness),
         intensity: lerp(dayHemi.intensity, nightHemi.intensity, nightness),
       },
-      { sheltered: false },
+      { sheltered: true },
     );
   };
 
@@ -482,17 +497,17 @@ export async function createOutdoorSky(
 
   const applyDayNight = (nightness: number) => {
     const sunElev = lerp(
-      SUN_ELEVATION_DEFAULT,
-      -SUN_ELEVATION_DEFAULT,
+      outdoorTuning.sunElevation,
+      -outdoorTuning.sunElevation,
       nightness,
     );
     const moonElev = lerp(
-      -MOON_ELEVATION_DEFAULT,
-      MOON_ELEVATION_DEFAULT,
+      -outdoorTuning.moonElevation,
+      outdoorTuning.moonElevation,
       nightness,
     );
-    const sunPos = positionFromAngles(SUN_AZIMUTH_DEFAULT, sunElev);
-    const moonPos = positionFromAngles(MOON_AZIMUTH_DEFAULT, moonElev);
+    const sunPos = positionFromAngles(outdoorTuning.sunAzimuth, sunElev);
+    const moonPos = positionFromAngles(outdoorTuning.moonAzimuth, moonElev);
 
     sun.position.set(sunPos.x, sunPos.y, sunPos.z);
     moon.position.set(moonPos.x, moonPos.y, moonPos.z);
@@ -505,22 +520,31 @@ export async function createOutdoorSky(
 
     const sunRgb = kelvinToRgb(outdoorTuning.sunTemperature);
     sun.diffuse = new Color3(sunRgb.r, sunRgb.g, sunRgb.b);
-    sun.specular = new Color3(sunRgb.r, sunRgb.g, sunRgb.b);
-    sun.intensity = outdoorTuning.sunIntensity * sunFactor;
+    const rawSunIntensity = outdoorTuning.sunIntensity * sunFactor;
+    const rawMoonIntensity = outdoorTuning.moonIntensity * moonFactor;
+    const { sun: sunKeyOn, moon: moonKeyOn } = resolveSunMoonShadowCasters(
+      rawSunIntensity,
+      rawMoonIntensity,
+    );
+
+    sun.intensity = sunKeyOn ? rawSunIntensity : 0;
+    sun.specular = sunKeyOn
+      ? new Color3(sunRgb.r, sunRgb.g, sunRgb.b)
+      : Color3.Black();
 
     const moonKelvin = kelvinToRgb(outdoorTuning.moonTemperature);
     const moonRgb = new Color3(moonKelvin.r, moonKelvin.g, moonKelvin.b);
     moon.diffuse = moonRgb;
-    moon.intensity = outdoorTuning.moonIntensity * moonFactor;
-    moon.specular = moon.intensity > 0.001 ? moonRgb : Color3.Black();
+    moon.intensity = moonKeyOn ? rawMoonIntensity : 0;
+    moon.specular = moonKeyOn ? moonRgb : Color3.Black();
 
     fillLights.applyNightness(nightness, false);
     applyAtmosphere(nightness, skyBlend);
     applyHemisphere(nightness);
 
     const { sun: sunShadow, moon: moonShadow } = resolveSunMoonShadowCasters(
-      sun.intensity,
-      moon.intensity,
+      rawSunIntensity,
+      rawMoonIntensity,
     );
     shadows.applyDirectionalShadows(
       sunShadow,
@@ -553,6 +577,12 @@ export async function createOutdoorSky(
     setBillboardAlpha(moonHalo, moonLit ? moonFactor * 0.28 : 0);
   };
 
+  const snapDayNight = () => {
+    targetNightness = resolveTargetNightness();
+    currentNightness = targetNightness;
+    applyDayNight(currentNightness);
+  };
+
   applyDayNight(currentNightness);
 
   return {
@@ -568,6 +598,15 @@ export async function createOutdoorSky(
       applyDayNight(currentNightness);
     },
     tickDayNight(deltaSeconds) {
+      targetNightness = resolveTargetNightness();
+      if (tuningPreviewMode !== null) {
+        if (currentNightness !== targetNightness) {
+          currentNightness = targetNightness;
+          applyDayNight(currentNightness);
+        }
+        return;
+      }
+
       if (currentNightness < targetNightness) {
         currentNightness = Math.min(
           targetNightness,
@@ -583,8 +622,14 @@ export async function createOutdoorSky(
     },
     toggleDayNight() {
       isDayMode = !isDayMode;
-      targetNightness = isDayMode ? 0 : 1;
+      if (tuningPreviewMode === null) {
+        targetNightness = isDayMode ? 0 : 1;
+      }
       saveDevDayNightMode(isDayMode);
+    },
+    setTuningPreviewMode(mode) {
+      tuningPreviewMode = mode;
+      snapDayNight();
     },
     isDay() {
       return isDayMode;
@@ -596,6 +641,9 @@ export async function createOutdoorSky(
       return currentSkyBlend;
     },
     shadows,
+    excludeMeshesFromFillLights(meshes) {
+      fillLights.excludeMeshesFromFill(meshes);
+    },
     dispose() {
       shadows.dispose();
       fillLights.dispose();

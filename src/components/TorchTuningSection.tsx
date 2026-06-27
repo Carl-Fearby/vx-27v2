@@ -65,7 +65,7 @@ export default function TorchTuningSection({
         />
         <SettingsSlider
           label="Edge softness"
-          hint="Penumbra — higher = softer beam edge"
+          hint="Penumbra — needs glTF cone falloff; 0 = sharp edge, 1 = soft spill"
           min={PENUMBRA_MIN}
           max={PENUMBRA_MAX}
           step={PENUMBRA_STEP}

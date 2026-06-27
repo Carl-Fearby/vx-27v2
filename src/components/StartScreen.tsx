@@ -1,17 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import SettingsMenu from "@/components/SettingsMenu";
 import { useFlashlightTuning } from "@/hooks/useFlashlightTuning";
+import { useMotionBlurTuning } from "@/hooks/useMotionBlurTuning";
 import { useHudWeaponTuning } from "@/hooks/useHudWeaponTuning";
 import { useOutdoorLightingTuning } from "@/hooks/useOutdoorLightingTuning";
 import { useSettings } from "@/hooks/useSettings";
+import { playLevelMusic, setMusicEnabled } from "@/lib/audio/music";
 import { preloadGame } from "@/lib/gameAssets";
 
 type LoadState = "loading" | "ready" | "error";
 
-export default function StartScreen() {
+type StartScreenProps = {
+  onStart: () => void;
+};
+
+export default function StartScreen({ onStart }: StartScreenProps) {
   const { settings, updateSettings } = useSettings();
   const {
     tuning: outdoorTuning,
@@ -24,6 +29,11 @@ export default function StartScreen() {
     updateTuning: updateFlashlightTuning,
     resetTuning: resetFlashlightTuning,
   } = useFlashlightTuning();
+  const {
+    tuning: motionBlurTuning,
+    updateTuning: updateMotionBlurTuning,
+    resetTuning: resetMotionBlurTuning,
+  } = useMotionBlurTuning();
   const {
     tuning: hudWeaponTuning,
     updateTuning: updateHudWeaponTuning,
@@ -64,24 +74,44 @@ export default function StartScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    setMusicEnabled(settings.musicEnabled, "start");
+  }, [settings.musicEnabled]);
+
   const isReady = loadState === "ready";
-  const isLoading = loadState === "loading";
 
   return (
     <main className="start-screen">
-      <div className="start-card">
-        <p className="start-eyebrow">Prototype</p>
-        <h1 className="start-title">VX-27</h1>
-        <p className="start-copy">
-          First-person arena with Rust-powered game logic and Babylon.js rendering.
-          Move with WASD, look with arrow keys or the mouse.
-        </p>
+      <div className="start-hero-stack">
+        <h1 className="start-title">VX-27 Power Core</h1>
+        <img
+          className="start-logo"
+          src="/ui/logo.png"
+          alt="VX-27 Power Core"
+          width={1024}
+          height={1024}
+          decoding="async"
+        />
+      </div>
 
+      <label className="start-music-toggle">
+        <span>
+          <span className="start-music-label">Music</span>
+          <span className="start-music-hint">Loading and in-level soundtrack</span>
+        </span>
+        <input
+          type="checkbox"
+          checked={settings.musicEnabled}
+          onChange={(event) => {
+            const enabled = event.currentTarget.checked;
+            updateSettings({ musicEnabled: enabled });
+            setMusicEnabled(enabled, "start");
+          }}
+        />
+      </label>
+
+      {loadState !== "error" && !isReady ? (
         <div className="loading-block" aria-live="polite">
-          <div className="loading-meta">
-            <span>{statusLabel}</span>
-            <span>{progress}%</span>
-          </div>
           <div
             className="loading-track"
             role="progressbar"
@@ -95,41 +125,44 @@ export default function StartScreen() {
               style={{ width: `${progress}%` }}
             />
           </div>
+          <div className="loading-meta">
+            <span>{statusLabel}</span>
+            <span>{progress}%</span>
+          </div>
         </div>
+      ) : null}
 
-        {loadState === "error" ? (
+      {loadState === "error" ? (
+        <button
+          type="button"
+          className="start-button"
+          onClick={() => window.location.reload()}
+        >
+          Retry
+        </button>
+      ) : isReady ? (
+        <div className="start-actions">
           <button
             type="button"
             className="start-button"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              if (settings.musicEnabled) {
+                playLevelMusic();
+              }
+              onStart();
+            }}
           >
-            Retry
+            Start
           </button>
-        ) : (
-          <div className="start-actions">
-            <Link
-              href="/game"
-              className={`start-button${isReady ? "" : " start-button--disabled"}`}
-              aria-disabled={!isReady}
-              tabIndex={isReady ? 0 : -1}
-              onClick={(event) => {
-                if (!isReady) {
-                  event.preventDefault();
-                }
-              }}
-            >
-              {isLoading ? "Loading…" : "Start"}
-            </Link>
-            <button
-              type="button"
-              className="start-button start-button--secondary"
-              onClick={() => setSettingsOpen(true)}
-            >
-              Settings
-            </button>
-          </div>
-        )}
-      </div>
+          <button
+            type="button"
+            className="start-button start-button--secondary"
+            onClick={() => setSettingsOpen(true)}
+          >
+            Settings
+          </button>
+        </div>
+      ) : null}
       <SettingsMenu
         open={settingsOpen}
         settings={settings}
@@ -142,6 +175,9 @@ export default function StartScreen() {
         flashlightTuning={flashlightTuning}
         onFlashlightTuningChange={updateFlashlightTuning}
         onFlashlightTuningReset={resetFlashlightTuning}
+        motionBlurTuning={motionBlurTuning}
+        onMotionBlurTuningChange={updateMotionBlurTuning}
+        onMotionBlurTuningReset={resetMotionBlurTuning}
         hudWeaponTuning={hudWeaponTuning}
         onHudWeaponTuningChange={updateHudWeaponTuning}
         onHudWeaponTuningReset={resetHudWeaponTuning}

@@ -1,4 +1,9 @@
-import { DirectionalLight, Scene, Vector3 } from "@babylonjs/core";
+import {
+  DirectionalLight,
+  Scene,
+  Vector3,
+  type AbstractMesh,
+} from "@babylonjs/core";
 import { createOutdoorFillLightsState, type OutdoorFillLightsState } from "@/lib/lighting/applyOutdoorDayNight";
 
 function directionFromTo(from: Vector3, to: Vector3): Vector3 {
@@ -6,6 +11,8 @@ function directionFromTo(from: Vector3, to: Vector3): Vector3 {
 }
 
 export type OutdoorFillLights = OutdoorFillLightsState & {
+  /** Shadowless fill is for the open deck — skip vertical surfaces so sun/moon shadows read. */
+  excludeMeshesFromFill: (meshes: AbstractMesh[]) => void;
   dispose: () => void;
 };
 
@@ -26,6 +33,10 @@ export function setupOutdoorFillLights(scene: Scene): OutdoorFillLights {
 
   return {
     ...state,
+    excludeMeshesFromFill(meshes) {
+      fill.excludedMeshes = meshes;
+      westFill.excludedMeshes = meshes;
+    },
     dispose() {
       fill.dispose();
       westFill.dispose();

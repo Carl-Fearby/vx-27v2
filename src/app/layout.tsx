@@ -21,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={orbitron.variable}>
-      <body className="antialiased">{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

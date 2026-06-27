@@ -1,5 +1,10 @@
 export interface GameCoreModule {
-  default: (module_or_path?: WebAssembly.Module | string) => Promise<unknown>;
+  default: (
+    module_or_path?:
+      | WebAssembly.Module
+      | string
+      | { module_or_path?: WebAssembly.Module | string },
+  ) => Promise<unknown>;
   GameCore: new () => GameCoreInstance;
 }
 
@@ -32,6 +37,8 @@ export interface GameCoreInstance {
   set_walk_bob_amplitude_cm(amplitudeCm: number): void;
   set_walk_bob_duration_sec(durationSec: number): void;
   tick(deltaSeconds: number): void;
+  try_begin_hole_fall(): void;
+  sync_player_position(x: number, y: number, z: number): void;
   position_x(): number;
   position_y(): number;
   position_z(): number;
@@ -41,6 +48,16 @@ export interface GameCoreInstance {
   walk_bob_pitch(): number;
   walk_bob_roll(): number;
   on_ground(): boolean;
+  foot_y(): number;
+  eye_height(): number;
+  falling_through_hole(): boolean;
+  death_active(): boolean;
+  death_reason(): string;
+  death_min_display_end_ms(): number;
+  should_die_from_fall(): boolean;
+  apply_player_death(kind: string, nowMs: number, minDisplayMs: number): boolean;
+  plan_player_respawn(nowMs: number, fadeMs: number): boolean;
+  finish_death_overlay(): void;
   press_flashlight_toggle(): void;
   flashlight_on(): boolean;
   write_flashlight_beam(nightness: number, out: Float32Array): void;
@@ -58,7 +75,9 @@ export async function loadGameCoreModule(): Promise<GameCoreModule> {
         `${WASM_BASE_PATH}/game_core.js`
       )) as GameCoreModule;
 
-      await wasm.default(`${WASM_BASE_PATH}/game_core_bg.wasm`);
+      await wasm.default({
+        module_or_path: `${WASM_BASE_PATH}/game_core_bg.wasm`,
+      });
       return wasm;
     })();
   }

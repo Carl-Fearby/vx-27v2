@@ -59,6 +59,55 @@ export function applyFloorSurfaceTuning(
   material.roughness = tuning.roughness;
   material.environmentIntensity = 0;
   material.directIntensity = 1;
+  material.backFaceCulling = false;
+  if (material.metadata && "dryAlbedo" in material.metadata) {
+    delete (material.metadata as { dryAlbedo?: unknown }).dryAlbedo;
+  }
+}
+
+/** Arena perimeter walls — sun/moon shadows and directional response on both faces. */
+export function applyWallSurfaceTuning(
+  material: PBRMaterial,
+  tuning: SurfaceMaterialTuning,
+  albedoTint = { r: 1, g: 1, b: 1 },
+) {
+  applyFloorSurfaceTuning(material, tuning, albedoTint);
+  material.twoSidedLighting = true;
+}
+
+/** Catwalk deck — world UVs, double-sided for underside ceiling view. */
+export function applyCatwalkDeckSurfaceTuning(
+  material: PBRMaterial,
+  tuning: SurfaceMaterialTuning,
+  albedoTint = { r: 1, g: 1, b: 1 },
+) {
+  applyFloorSurfaceTuning(material, tuning, albedoTint);
+  material.twoSidedLighting = true;
+  material.useMetallnessFromMetallicTextureBlue = false;
+  material.useRoughnessFromMetallicTextureGreen = true;
+  material.metallic = tuning.metallic;
+  material.roughness = tuning.roughness;
+}
+
+/** Catwalk parapet rails — separate texture set from arena walls. */
+export function applyCatwalkEdgeSurfaceTuning(
+  material: PBRMaterial,
+  tuning: SurfaceMaterialTuning,
+  albedoTint = { r: 1, g: 1, b: 1 },
+) {
+  applySurfaceTuning(material, tuning, albedoTint);
+  material.maxSimultaneousLights = 8;
+  material.reflectionTexture = null;
+  material.ambientTexture = null;
+  material.environmentIntensity = 0;
+  material.clearCoat.isEnabled = false;
+  material.useMetallnessFromMetallicTextureBlue = false;
+  material.useRoughnessFromMetallicTextureGreen = true;
+  material.metallic = tuning.metallic;
+  material.roughness = tuning.roughness;
+  material.directIntensity = 1;
+  material.twoSidedLighting = true;
+  material.backFaceCulling = false;
 }
 
 /** Painted hazard stripes — GE2 surface response, sun/moon direct only. */

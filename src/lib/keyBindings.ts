@@ -27,7 +27,7 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
   jump: "Space",
   crouch: "KeyZ",
   sprint: ["ShiftLeft", "ShiftRight"],
-  openSettings: "Escape",
+  openSettings: "",
   materialEdit: "KeyE",
   dayNightToggle: "KeyN",
   flashlightToggle: "KeyF",
@@ -174,6 +174,10 @@ export function eventMatchesBinding(
   action: BindingAction,
   code: string,
 ): boolean {
+  if (action === "openSettings" && code === "Escape") {
+    return false;
+  }
+
   return getBindingCodes(bindings, action).includes(code);
 }
 

@@ -53,6 +53,9 @@ export function useMaterialEdit() {
     const next: SurfaceTuningState = {
       floor: { ...DEFAULT_SURFACE_TUNING.floor },
       pillar: { ...DEFAULT_SURFACE_TUNING.pillar },
+      wall: { ...DEFAULT_SURFACE_TUNING.wall },
+      catwalkDeck: { ...DEFAULT_SURFACE_TUNING.catwalkDeck },
+      catwalkEdge: { ...DEFAULT_SURFACE_TUNING.catwalkEdge },
     };
     setSurfaceTuning(saveSurfaceTuning(next));
   }, []);

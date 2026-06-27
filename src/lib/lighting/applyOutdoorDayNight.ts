@@ -64,7 +64,7 @@ export function createOutdoorFillLightsState(
   return { fill, westFill, applyNightness };
 }
 
-/** GameEngine2 FpsGame shadow handoff — one directional shadow during overlap. */
+/** GameEngine2 FpsGame shadow handoff — one directional key light during overlap. */
 let lastDualShadowCaster: "sun" | "moon" = "sun";
 
 export function resolveSunMoonShadowCasters(

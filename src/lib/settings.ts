@@ -1,4 +1,8 @@
 export type GameSettings = {
+  musicEnabled: boolean;
+  hudVisible: boolean;
+  rainEnabled: boolean;
+  rainIntensity: number;
   invertLookX: boolean;
   invertLookY: boolean;
   mouseLookEase: number;
@@ -9,9 +13,15 @@ export type GameSettings = {
   walkBobEnabled: boolean;
   walkBobAmplitudeCm: number;
   walkBobDurationSec: number;
+  /** Dev: draw the player's floor collision footprint in the world. */
+  showPlayerCollisionFootprint: boolean;
 };
 
 export const DEFAULT_SETTINGS: GameSettings = {
+  musicEnabled: true,
+  hudVisible: true,
+  rainEnabled: false,
+  rainIntensity: 1.25,
   invertLookX: false,
   invertLookY: false,
   mouseLookEase: 1,
@@ -22,6 +32,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   walkBobEnabled: true,
   walkBobAmplitudeCm: 18.6,
   walkBobDurationSec: 0.41,
+  showPlayerCollisionFootprint: false,
 };
 
 const CONTROLS_STORAGE_KEY = "vx27-controls";
@@ -49,6 +60,23 @@ function sanitizeSettings(value: Partial<GameSettings>): GameSettings {
   };
 
   return {
+    musicEnabled: parseBooleanSetting(
+      value.musicEnabled,
+      DEFAULT_SETTINGS.musicEnabled,
+    ),
+    hudVisible: parseBooleanSetting(
+      value.hudVisible,
+      DEFAULT_SETTINGS.hudVisible,
+    ),
+    rainEnabled: parseBooleanSetting(
+      value.rainEnabled,
+      DEFAULT_SETTINGS.rainEnabled,
+    ),
+    rainIntensity: clamp(
+      value.rainIntensity ?? DEFAULT_SETTINGS.rainIntensity,
+      0.05,
+      5,
+    ),
     invertLookX: parseBooleanSetting(
       value.invertLookX ?? legacy.invertMouseX ?? legacy.invert_mouse_x,
       DEFAULT_SETTINGS.invertLookX,
@@ -95,6 +123,10 @@ function sanitizeSettings(value: Partial<GameSettings>): GameSettings {
       value.walkBobDurationSec ?? DEFAULT_SETTINGS.walkBobDurationSec,
       0.25,
       1.2,
+    ),
+    showPlayerCollisionFootprint: parseBooleanSetting(
+      value.showPlayerCollisionFootprint,
+      DEFAULT_SETTINGS.showPlayerCollisionFootprint,
     ),
   };
 }

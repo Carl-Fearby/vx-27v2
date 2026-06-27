@@ -1,8 +1,12 @@
 import {
   clamp,
   DEFAULT_HEMI_NIGHT,
+  MOON_AZIMUTH_DEFAULT,
+  MOON_ELEVATION_DEFAULT,
   MOON_INTENSITY_DEFAULT,
   MOON_TEMPERATURE_DEFAULT,
+  SUN_AZIMUTH_DEFAULT,
+  SUN_ELEVATION_DEFAULT,
 } from "@/lib/lighting/tuning";
 
 export type HemiTuning = {
@@ -13,8 +17,12 @@ export type HemiTuning = {
 export type OutdoorLightingTuning = {
   sunIntensity: number;
   sunTemperature: number;
+  sunAzimuth: number;
+  sunElevation: number;
   moonIntensity: number;
   moonTemperature: number;
+  moonAzimuth: number;
+  moonElevation: number;
   shelteredHemiMul: number;
   /** 0 = no visible shadow, 1 = darkest shadows. */
   shadowDepth: number;
@@ -31,6 +39,22 @@ export const SUN_TEMPERATURE_DEFAULT = 6400;
 export const SUN_TEMPERATURE_MIN = 3500;
 export const SUN_TEMPERATURE_MAX = 9000;
 export const SUN_TEMPERATURE_STEP = 100;
+
+export const SUN_AZIMUTH_MIN = 0;
+export const SUN_AZIMUTH_MAX = 360;
+export const SUN_AZIMUTH_STEP = 1;
+
+export const SUN_ELEVATION_MIN = 2;
+export const SUN_ELEVATION_MAX = 85;
+export const SUN_ELEVATION_STEP = 0.5;
+
+export const MOON_AZIMUTH_MIN = 0;
+export const MOON_AZIMUTH_MAX = 360;
+export const MOON_AZIMUTH_STEP = 1;
+
+export const MOON_ELEVATION_MIN = 2;
+export const MOON_ELEVATION_MAX = 85;
+export const MOON_ELEVATION_STEP = 0.5;
 
 export const MOON_INTENSITY_MIN = 0;
 export const MOON_INTENSITY_MAX = 5;
@@ -66,8 +90,12 @@ export const DEFAULT_HEMI_DAY: HemiTuning = {
 export const DEFAULT_OUTDOOR_LIGHTING: OutdoorLightingTuning = {
   sunIntensity: SUN_INTENSITY_DEFAULT,
   sunTemperature: SUN_TEMPERATURE_DEFAULT,
+  sunAzimuth: SUN_AZIMUTH_DEFAULT,
+  sunElevation: SUN_ELEVATION_DEFAULT,
   moonIntensity: MOON_INTENSITY_DEFAULT,
   moonTemperature: MOON_TEMPERATURE_DEFAULT,
+  moonAzimuth: MOON_AZIMUTH_DEFAULT,
+  moonElevation: MOON_ELEVATION_DEFAULT,
   shelteredHemiMul: SHELTERED_HEMI_MUL_DEFAULT,
   shadowDepth: SHADOW_DEPTH_DEFAULT,
   hemiDay: { ...DEFAULT_HEMI_DAY },
@@ -81,7 +109,7 @@ let sessionOutdoorLighting: OutdoorLightingTuning = {
 };
 
 /** Bumps when defaults change — clears stale in-memory session values on hot reload. */
-const OUTDOOR_LIGHTING_SCHEMA_VERSION = 5;
+const OUTDOOR_LIGHTING_SCHEMA_VERSION = 7;
 let loadedOutdoorLightingVersion = 0;
 
 function ensureOutdoorLightingSchema() {
@@ -130,6 +158,18 @@ function sanitizeOutdoorLighting(
       SUN_TEMPERATURE_MIN,
       SUN_TEMPERATURE_MAX,
     ),
+    sunAzimuth: clamp(
+      typeof value.sunAzimuth === "number" ? value.sunAzimuth : fallback.sunAzimuth,
+      SUN_AZIMUTH_MIN,
+      SUN_AZIMUTH_MAX,
+    ),
+    sunElevation: clamp(
+      typeof value.sunElevation === "number"
+        ? value.sunElevation
+        : fallback.sunElevation,
+      SUN_ELEVATION_MIN,
+      SUN_ELEVATION_MAX,
+    ),
     moonIntensity: clamp(
       typeof value.moonIntensity === "number"
         ? value.moonIntensity
@@ -143,6 +183,20 @@ function sanitizeOutdoorLighting(
         : fallback.moonTemperature,
       MOON_TEMPERATURE_MIN,
       MOON_TEMPERATURE_MAX,
+    ),
+    moonAzimuth: clamp(
+      typeof value.moonAzimuth === "number"
+        ? value.moonAzimuth
+        : fallback.moonAzimuth,
+      MOON_AZIMUTH_MIN,
+      MOON_AZIMUTH_MAX,
+    ),
+    moonElevation: clamp(
+      typeof value.moonElevation === "number"
+        ? value.moonElevation
+        : fallback.moonElevation,
+      MOON_ELEVATION_MIN,
+      MOON_ELEVATION_MAX,
     ),
     shelteredHemiMul: clamp(
       typeof value.shelteredHemiMul === "number"
