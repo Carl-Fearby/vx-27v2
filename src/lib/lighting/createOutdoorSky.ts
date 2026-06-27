@@ -130,6 +130,8 @@ void main(void) {
 }
 `;
 
+import type { OutdoorLightRefs } from "@/lib/lighting/viewmodelLighting";
+
 export type SkyTuningPreviewMode = "day" | "night" | null;
 
 export type OutdoorSky = {
@@ -144,6 +146,7 @@ export type OutdoorSky = {
   getNightness: () => number;
   getSkyBlend: () => number;
   shadows: OutdoorShadows;
+  outdoorLights: OutdoorLightRefs;
   /** Keep shadowless fill off vertical arena surfaces so wall-to-wall sun shadows read. */
   excludeMeshesFromFillLights: (meshes: AbstractMesh[]) => void;
   dispose: () => void;
@@ -431,8 +434,15 @@ export async function createOutdoorSky(
   );
   moon.intensity = 0;
 
-  const shadows = setupOutdoorShadows(scene, sun, moon);
+  const shadows = setupOutdoorShadows(scene, sun, moon, camera);
   const fillLights = setupOutdoorFillLights(scene);
+  const outdoorLights: OutdoorLightRefs = {
+    hemi,
+    sun,
+    moon,
+    fill: fillLights.fill,
+    westFill: fillLights.westFill,
+  };
 
   scene.imageProcessingConfiguration.toneMappingEnabled = true;
   scene.imageProcessingConfiguration.toneMappingType =
@@ -538,7 +548,7 @@ export async function createOutdoorSky(
     moon.intensity = moonKeyOn ? rawMoonIntensity : 0;
     moon.specular = moonKeyOn ? moonRgb : Color3.Black();
 
-    fillLights.applyNightness(nightness, false);
+    fillLights.applyNightness(nightness, true);
     applyAtmosphere(nightness, skyBlend);
     applyHemisphere(nightness);
 
@@ -641,6 +651,7 @@ export async function createOutdoorSky(
       return currentSkyBlend;
     },
     shadows,
+    outdoorLights,
     excludeMeshesFromFillLights(meshes) {
       fillLights.excludeMeshesFromFill(meshes);
     },

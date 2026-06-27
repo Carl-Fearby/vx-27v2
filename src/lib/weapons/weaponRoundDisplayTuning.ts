@@ -23,15 +23,15 @@ export type RoundDisplayTuning = Record<
 const STORAGE_KEY = "vx27-round-display-tuning";
 
 export const DEFAULT_HIP_ROUND_DISPLAY: WeaponRoundDisplayPose = {
-  posX: 0.465,
-  posY: 0.364,
-  posZ: 0.181,
-  rotX: -0.8356,
-  rotY: 0.5274,
-  rotZ: -0.0156,
+  posX: 0.466,
+  posY: 0.347,
+  posZ: 0.187,
+  rotX: -0.769,
+  rotY: 0.5,
+  rotZ: -0.043,
   scale: 2.634,
-  planeWidth: 0.087,
-  planeHeight: 0.1,
+  planeWidth: 0.095,
+  planeHeight: 0.094,
   fontSize: 30,
 };
 
@@ -52,8 +52,8 @@ export const DEFAULT_PISTOL_HIP_ROUND_DISPLAY: WeaponRoundDisplayPose = {
   posX: 0.341,
   posY: 0.424,
   posZ: 0.22,
-  rotX: -0.426,
-  rotY: 0.263,
+  rotX: -0.4285,
+  rotY: 0.142,
   rotZ: 0.0364,
   scale: 0.504,
   planeWidth: 0.087,

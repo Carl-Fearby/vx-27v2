@@ -4,6 +4,8 @@ import { clamp, lerp, lerpColor } from "@/lib/lighting/tuning";
 /** GameEngine2 `createOutdoorLights` open-arena day values. */
 const DAY_AMBIENT_COLOR = { r: 0xd0 / 255, g: 0xdc / 255, b: 0xe8 / 255 };
 const DAY_AMBIENT_INTENSITY = 0.14;
+/** GameEngine2 sheltered arena ambient — low enough that sun/moon shadows read. */
+const SHELTERED_DAY_AMBIENT_INTENSITY = 0.028;
 const DAY_FILL_COLOR = { r: 0xc8 / 255, g: 0xd4 / 255, b: 0xe8 / 255 };
 const DAY_FILL_INTENSITY = 0.48;
 const DAY_WEST_FILL_COLOR = { r: 0xb8 / 255, g: 0xc8 / 255, b: 0xe0 / 255 };
@@ -37,22 +39,28 @@ export function createOutdoorFillLightsState(
     const t = clamp(nightness, 0, 1);
     const fillMult = sheltered ? 0.035 : NIGHT_FILL_MULT;
     const ambMult = sheltered ? 0.09 : NIGHT_AMB_MULT;
+    const dayAmbientIntensity = sheltered
+      ? SHELTERED_DAY_AMBIENT_INTENSITY
+      : DAY_AMBIENT_INTENSITY;
+    /** GE2 sheltered arena: shadowless fill is zero so sun/moon shadows read on weapons. */
+    const dayFillIntensity = sheltered ? 0 : DAY_FILL_INTENSITY;
+    const dayWestFillIntensity = sheltered ? 0 : DAY_WEST_FILL_INTENSITY;
 
     const ambientColor = lerpColor(DAY_AMBIENT_COLOR, NIGHT_AMBIENT_COLOR, t);
     const ambientIntensity = lerp(
-      DAY_AMBIENT_INTENSITY,
-      DAY_AMBIENT_INTENSITY * ambMult,
+      dayAmbientIntensity,
+      dayAmbientIntensity * ambMult,
       t,
     );
     scene.ambientColor = toColor3(ambientColor).scale(ambientIntensity);
 
     const fillColor = lerpColor(DAY_FILL_COLOR, NIGHT_FILL_COLOR, t);
-    fill.intensity = lerp(DAY_FILL_INTENSITY, DAY_FILL_INTENSITY * fillMult, t);
+    fill.intensity = lerp(dayFillIntensity, DAY_FILL_INTENSITY * fillMult, t);
     fill.diffuse = toColor3(fillColor);
 
     const westColor = lerpColor(DAY_WEST_FILL_COLOR, NIGHT_FILL_COLOR, t);
     westFill.intensity = lerp(
-      DAY_WEST_FILL_INTENSITY,
+      dayWestFillIntensity,
       DAY_WEST_FILL_INTENSITY * fillMult,
       t,
     );

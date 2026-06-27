@@ -20,6 +20,11 @@ import {
   type OutdoorSky,
   type SkyTuningPreviewMode,
 } from "@/lib/lighting/createOutdoorSky";
+import {
+  createViewmodelLighting,
+  type ViewmodelLighting,
+} from "@/lib/lighting/viewmodelLighting";
+import { resolveViewmodelLightingZone } from "@/lib/lighting/lightingZones";
 import { createPlayerFlashlight, type PlayerFlashlight } from "@/lib/lighting/createPlayerFlashlight";
 import { createMotionBlur, type SceneMotionBlur } from "@/lib/postProcess/createMotionBlur";
 import { createTileableFloorMaterial } from "@/lib/floor/createTileableFloorMaterial";
@@ -45,9 +50,9 @@ import { createHazardPillarMaterial } from "@/lib/pillar/createHazardPillarMater
 import { loadCenterEnemy } from "@/lib/enemies/loadCenterEnemy";
 import {
   createViewWeapon,
-  VIEWMODEL_LAYER_MASK,
   type ViewWeapon,
 } from "@/lib/weapons/createViewWeapon";
+import { attachViewmodelOverlayPass } from "@/lib/weapons/viewmodelOverlayPass";
 import {
   PILLAR_ALBEDO_TINT,
   PILLAR_DIAMETER,
@@ -386,6 +391,8 @@ export default function FpsScene(props: FpsSceneProps) {
     let outdoorSky: OutdoorSky | null = null;
     let flashlight: PlayerFlashlight | null = null;
     let motionBlur: SceneMotionBlur | null = null;
+    let detachViewmodelOverlay: (() => void) | null = null;
+    let viewmodelLighting: ViewmodelLighting | null = null;
     let viewWeapon: ViewWeapon | null = null;
     const landingMeshes: Mesh[] = [];
     const editableMaterials: Partial<Record<EditableSurfaceId, PBRMaterial>> = {};
@@ -492,26 +499,18 @@ export default function FpsScene(props: FpsSceneProps) {
       camera.inputs.clear();
       scene.activeCamera = camera;
 
-      const viewWeaponCamera = new FreeCamera(
-        "viewWeaponCamera",
-        camera.position.clone(),
-        scene,
-      );
-      viewWeaponCamera.minZ = 0.01;
-      viewWeaponCamera.maxZ = 100;
-      viewWeaponCamera.fov = camera.fov;
-      viewWeaponCamera.layerMask = VIEWMODEL_LAYER_MASK;
-      viewWeaponCamera.inputs.clear();
-      scene.activeCameras = [camera, viewWeaponCamera];
+      scene.activeCameras = [camera];
 
       motionBlur = createMotionBlur(scene, camera, motionBlurTuningRef.current);
       appliedMotionBlurTuningSnapshot = JSON.stringify(motionBlurTuningRef.current);
+      detachViewmodelOverlay = attachViewmodelOverlayPass(scene, camera);
 
       outdoorSky = await createOutdoorSky(scene, camera);
       if (disposed || !canvas) {
         outdoorSky.dispose();
         return;
       }
+      viewmodelLighting = createViewmodelLighting(scene, outdoorSky.outdoorLights);
 
       const previewModeBridge = skyPreviewModeRef.current;
       if (previewModeBridge) {
@@ -590,6 +589,7 @@ export default function FpsScene(props: FpsSceneProps) {
         pillar,
         ...arenaStructures,
         ...centerEnemyMeshes,
+        ...viewWeapon.shadowMeshes,
       ];
       /** Floor receives only — casting from the deck onto itself breaks sun/moon shadows. */
       const shadowCasters = [
@@ -625,11 +625,20 @@ export default function FpsScene(props: FpsSceneProps) {
       for (const mesh of shadowCasters) {
         outdoorSky.shadows.addCaster(mesh);
       }
-      outdoorSky.excludeMeshesFromFillLights(arenaWalls);
+      const shadowlessFillExclusions = [
+        ...arenaWalls,
+        ...viewWeapon.shadowMeshes,
+      ];
+      outdoorSky.excludeMeshesFromFillLights(shadowlessFillExclusions);
+      viewmodelLighting.setFillBaseExclusions(shadowlessFillExclusions);
+      viewmodelLighting.syncZone(
+        resolveViewmodelLightingZone(),
+        viewWeapon.shadowMeshes,
+      );
       flashlight = createPlayerFlashlight(scene, shadowReceivers);
       flashlight.applyTuning(flashlightTuningRef.current);
       appliedFlashlightTuningSnapshot = JSON.stringify(flashlightTuningRef.current);
-      await outdoorSky.shadows.prepareReceiverShaders(shadowReceivers);
+      await outdoorSky.shadows.prepareReceiverShaders(shadowReceivers, camera);
       await flashlight.prepareShadowShaders(shadowReceivers);
 
       if (!scene) {
@@ -1067,10 +1076,6 @@ export default function FpsScene(props: FpsSceneProps) {
             gameCore.walk_bob_roll() * walkBobScale,
           );
         }
-        viewWeaponCamera.position.copyFrom(camera.position);
-        viewWeaponCamera.rotationQuaternion = camera.rotationQuaternion?.clone() ?? null;
-        viewWeaponCamera.fov = camera.fov;
-
         const lookYaw = gameCore.yaw();
         const lookBobScale = 1 - aimBobBlend;
         const lookPitch = flyModeActive
@@ -1110,6 +1115,12 @@ export default function FpsScene(props: FpsSceneProps) {
           roundDisplayPreview: roundDisplayPreviewRef.current,
           visible: !deathVisibleRef.current && !materialEditModeRef.current,
         });
+        if (viewWeapon) {
+          viewmodelLighting?.syncZone(
+            resolveViewmodelLightingZone(),
+            viewWeapon.shadowMeshes,
+          );
+        }
 
         onPlayerCoordsRef.current?.({
           x: flyModeActive ? flyPosition.x : gameCore.position_x(),
@@ -1144,6 +1155,8 @@ export default function FpsScene(props: FpsSceneProps) {
 
       safeExitPointerLock();
 
+      detachViewmodelOverlay?.();
+      viewmodelLighting?.dispose();
       outdoorSky?.dispose();
       motionBlur?.dispose();
       flashlight?.dispose();

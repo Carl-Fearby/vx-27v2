@@ -1,6 +1,8 @@
 import {
   DirectionalLight,
+  Material,
   ShadowGenerator,
+  type Camera,
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
@@ -30,7 +32,9 @@ export type OutdoorShadows = {
   addCaster: (mesh: Mesh) => void;
   addReceiver: (mesh: Mesh) => void;
   /** Pre-compile PBR shadow variants once scene meshes exist. */
-  prepareReceiverShaders: (meshes: Mesh[]) => Promise<void>;
+  prepareReceiverShaders: (meshes: Mesh[], worldCamera: Camera) => Promise<void>;
+  /** Register viewmodel cameras so sun/moon shadows resolve on the weapon pass. */
+  pinLookupCameras: (cameras: Camera[]) => void;
   applyDirectionalShadows: (
     sunOn: boolean,
     moonOn: boolean,
@@ -54,15 +58,32 @@ function fitDirectionalShadowFrustum(
   light.orthoBottom = -half;
 }
 
+/** Viewmodel camera pass falls back to `getShadowGenerator(null)`. */
+function pinShadowGeneratorLookup(
+  light: DirectionalLight,
+  generator: ShadowGenerator,
+  extraLookupCameras: Camera[] = [],
+): void {
+  const map = light.getShadowGenerators();
+  if (map) {
+    map.set(null, generator);
+    for (const lookupCamera of extraLookupCameras) {
+      map.set(lookupCamera, generator);
+    }
+  }
+}
+
 function createDirectionalShadowGenerator(
   light: DirectionalLight,
+  worldCamera: Camera,
   mapSize: number,
   darkness: number,
   bias: number,
   normalBias: number,
   blurKernel: number,
 ): ShadowGenerator {
-  const generator = new ShadowGenerator(mapSize, light);
+  /** Pin to world camera — viewWeaponCamera minZ/maxZ breaks shadow depth when active. */
+  const generator = new ShadowGenerator(mapSize, light, false, worldCamera);
   generator.useBlurExponentialShadowMap = false;
   generator.useKernelBlur = blurKernel > 0;
   generator.blurKernel = blurKernel;
@@ -72,6 +93,7 @@ function createDirectionalShadowGenerator(
   generator.darkness = darkness;
   generator.transparencyShadow = true;
   generator.forceBackFacesOnly = false;
+  pinShadowGeneratorLookup(light, generator);
   return generator;
 }
 
@@ -79,6 +101,7 @@ export function setupOutdoorShadows(
   scene: Scene,
   sun: DirectionalLight,
   moon: DirectionalLight,
+  worldCamera: Camera,
 ): OutdoorShadows {
   scene.shadowsEnabled = true;
 
@@ -91,6 +114,7 @@ export function setupOutdoorShadows(
 
   const sunShadow = createDirectionalShadowGenerator(
     sun,
+    worldCamera,
     SUN_SHADOW_MAP_SIZE,
     shadowDepthToDarkness(1),
     SUN_SHADOW_BIAS,
@@ -99,6 +123,7 @@ export function setupOutdoorShadows(
   );
   const moonShadow = createDirectionalShadowGenerator(
     moon,
+    worldCamera,
     MOON_SHADOW_MAP_SIZE,
     shadowDepthToDarkness(1),
     MOON_SHADOW_BIAS,
@@ -114,23 +139,35 @@ export function setupOutdoorShadows(
     addReceiver(mesh) {
       mesh.receiveShadows = true;
     },
-    async prepareReceiverShaders(meshes) {
-      await Promise.all([
-        sunShadow.forceCompilationAsync(),
-        moonShadow.forceCompilationAsync(),
-      ]);
-      const compiledMaterials = new Set<Mesh["material"]>();
-      for (const mesh of meshes) {
-        if (!mesh.receiveShadows) {
-          continue;
+    async prepareReceiverShaders(meshes, worldCamera) {
+      const previousActiveCamera = scene.activeCamera;
+      scene.activeCamera = worldCamera;
+      try {
+        await Promise.all([
+          sunShadow.forceCompilationAsync(),
+          moonShadow.forceCompilationAsync(),
+        ]);
+        const compiledMaterials = new Set<Mesh["material"]>();
+        for (const mesh of meshes) {
+          if (!mesh.receiveShadows) {
+            continue;
+          }
+          const material = mesh.material;
+          if (!material || compiledMaterials.has(material)) {
+            continue;
+          }
+          compiledMaterials.add(material);
+          material.markAsDirty(Material.LightDirtyFlag);
+          material.markAsDirty(Material.MiscDirtyFlag);
+          await material.forceCompilationAsync(mesh, { clipPlane: false });
         }
-        const material = mesh.material;
-        if (!material || compiledMaterials.has(material)) {
-          continue;
-        }
-        compiledMaterials.add(material);
-        await material.forceCompilationAsync(mesh, { clipPlane: false });
+      } finally {
+        scene.activeCamera = previousActiveCamera;
       }
+    },
+    pinLookupCameras(cameras) {
+      pinShadowGeneratorLookup(sun, sunShadow, cameras);
+      pinShadowGeneratorLookup(moon, moonShadow, cameras);
     },
     applyDirectionalShadows(sunOn, moonOn, shadowDepth = 1) {
       const darkness = shadowDepthToDarkness(shadowDepth);

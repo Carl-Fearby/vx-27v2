@@ -4,7 +4,6 @@ import {
   Matrix,
   Mesh,
   MeshBuilder,
-  PBRMaterial,
   Quaternion,
   Scene,
   StandardMaterial,
@@ -22,6 +21,7 @@ import type {
 } from "@/lib/weapons/viewWeaponTuning";
 import { createWeaponRoundDisplay } from "@/lib/weapons/weaponRoundDisplay";
 import { createRifleReticleRoundOverlay } from "@/lib/weapons/rifleReticleRoundOverlay";
+import { configureViewWeaponMesh } from "@/lib/lighting/configureViewWeaponMaterials";
 import {
   DEFAULT_ROUND_DISPLAY_TUNING,
   resolveRoundDisplayPoseForWeapon,
@@ -50,6 +50,7 @@ export type ViewWeaponUpdateOptions = {
 
 export type ViewWeapon = {
   root: TransformNode;
+  shadowMeshes: Mesh[];
   setActiveWeapon: (weapon: PrimaryWeaponId) => void;
   update: (camera: FreeCamera, options: ViewWeaponUpdateOptions) => void;
   dispose: () => void;
@@ -244,22 +245,13 @@ function prepareViewMesh(mesh: Mesh) {
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.renderingGroupId = VIEWMODEL_RENDERING_GROUP;
   mesh.layerMask = VIEWMODEL_LAYER_MASK;
-  mesh.receiveShadows = true;
-
-  const material = mesh.material;
-  const materials = Array.isArray(material) ? material : material ? [material] : [];
-  for (const mat of materials) {
-    if (mat instanceof PBRMaterial) {
-      mat.backFaceCulling = false;
-      mat.environmentIntensity = Math.max(mat.environmentIntensity, 0.8);
-      mat.directIntensity = Math.max(mat.directIntensity, 1);
-    }
-  }
+  configureViewWeaponMesh(mesh);
 }
 
 async function loadWeaponModel(
   scene: Scene,
   weapon: PrimaryWeaponId,
+  shadowMeshes: Mesh[],
 ): Promise<TransformNode> {
   const result = await SceneLoader.ImportMeshAsync(
     "",
@@ -275,6 +267,7 @@ async function loadWeaponModel(
     mesh.parent = root;
     if (mesh instanceof Mesh) {
       prepareViewMesh(mesh);
+      shadowMeshes.push(mesh);
     }
   }
   fitModel(root, weapon);
@@ -290,9 +283,10 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
   sway.parent = root;
   pivot.parent = sway;
 
+  const shadowMeshes: Mesh[] = [];
   const [rifle, pistol] = await Promise.all([
-    loadWeaponModel(scene, "rifle"),
-    loadWeaponModel(scene, "pistol"),
+    loadWeaponModel(scene, "rifle", shadowMeshes),
+    loadWeaponModel(scene, "pistol", shadowMeshes),
   ]);
   rifle.parent = pivot;
   pistol.parent = pivot;
@@ -362,6 +356,7 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
 
   return {
     root,
+    shadowMeshes,
     setActiveWeapon,
     update(camera, options) {
       const {
