@@ -27,6 +27,11 @@ import {
 import { resolveViewmodelLightingZone } from "@/lib/lighting/lightingZones";
 import { createPlayerFlashlight, type PlayerFlashlight } from "@/lib/lighting/createPlayerFlashlight";
 import { createMotionBlur, type SceneMotionBlur } from "@/lib/postProcess/createMotionBlur";
+import {
+  createGameSoundManager,
+  type GameSoundManager,
+} from "@/lib/audio/soundManager";
+import { createLaserTracerSystem, type LaserTracerSystem } from "@/lib/combat/laserTracers";
 import { createTileableFloorMaterial } from "@/lib/floor/createTileableFloorMaterial";
 import { createFloorWithHoles } from "@/lib/floor/createFloorWithHoles";
 import DeathOverlay from "@/components/DeathOverlay";
@@ -54,10 +59,9 @@ import {
   type ViewWeapon,
 } from "@/lib/weapons/createViewWeapon";
 import { attachViewmodelOverlayPass } from "@/lib/weapons/viewmodelOverlayPass";
+import type { LevelRuntime } from "@/lib/level/types";
 import {
   PILLAR_ALBEDO_TINT,
-  PILLAR_DIAMETER,
-  PILLAR_HEIGHT,
 } from "@/lib/pillar/pillarAssets";
 import { createGameCore, type GameCoreInstance } from "@/lib/gameCore";
 import {
@@ -85,6 +89,7 @@ import type { FlashlightTuning } from "@/lib/lighting/flashlightTuning";
 import type { MotionBlurTuning } from "@/lib/postProcess/motionBlurTuning";
 import type { GameSettings } from "@/lib/settings";
 import type { PrimaryWeaponId } from "@/lib/hud/weaponHud";
+import type { FireMode } from "@/lib/weapons/primaryWeapons";
 import type { ViewWeaponTuning } from "@/lib/weapons/viewWeaponTuning";
 import type {
   RoundDisplayPoseMode,
@@ -130,11 +135,20 @@ type FpsSceneProps = Pick<
   pointerLockBlocked: boolean;
   materialEditMode: boolean;
   activePrimaryWeapon: PrimaryWeaponId;
+  roundsInMag: number;
+  activeLowAmmoThreshold: number;
+  fireMode: FireMode;
+  levelRuntime: LevelRuntime;
   surfaceTuning: SurfaceTuningState;
   onSurfacePick?: (surfaceId: EditableSurfaceId) => void;
   onToggleMaterialEditMode?: () => void;
   onPlayerCoords?: (coords: PlayerCoords) => void;
   onAimBlend?: (aimBlend: number) => void;
+  onTryFirePrimary?: () => {
+    weaponId: PrimaryWeaponId;
+    roundsInMag: number;
+    fireMode: FireMode;
+  } | null;
   onReady?: () => void;
   skyPreviewModeRef?: React.MutableRefObject<
     ((mode: SkyTuningPreviewMode) => void) | null
@@ -193,6 +207,13 @@ const FLY_FAST_SPEED = 28;
 const LANDING_RAY_TOP = 120;
 const LANDING_RAY_LENGTH = 260;
 const WORLD_LAYER_MASK = 0x0fffffff;
+const BULLET_MAX_RANGE = 80;
+const BURST_SHOT_COUNT = 3;
+const BURST_INTERVAL = 0.085;
+const AUTO_FIRE_INTERVAL = 0.1;
+const WALK_SPEED = 5;
+const CROUCH_EYE_RATIO = 0.55;
+const WALK_BOB_MIN_ACTIVITY_SPEED = 0.15;
 
 const SCENE_BINDING_ACTIONS: BindingAction[] = BINDING_ROWS.map(
   (row) => row.id,
@@ -283,6 +304,7 @@ export default function FpsScene(props: FpsSceneProps) {
   const [deathFading, setDeathFading] = useState(false);
   const deathVisibleRef = useRef(false);
   const deathFadingRef = useRef(false);
+  const levelRuntimeRef = useRef(props.levelRuntime);
   const settingsRef = useRef(props);
   const outdoorTuningRef = useRef(props.outdoorTuning);
   const flashlightTuningRef = useRef(props.flashlightTuning);
@@ -294,10 +316,14 @@ export default function FpsScene(props: FpsSceneProps) {
   const pointerLockBlockedRef = useRef(props.pointerLockBlocked);
   const materialEditModeRef = useRef(props.materialEditMode);
   const activePrimaryWeaponRef = useRef(props.activePrimaryWeapon);
+  const roundsInMagRef = useRef(props.roundsInMag);
+  const activeLowAmmoThresholdRef = useRef(props.activeLowAmmoThreshold);
+  const fireModeRef = useRef(props.fireMode);
   const surfaceTuningRef = useRef(props.surfaceTuning);
   const onSurfacePickRef = useRef(props.onSurfacePick);
   const onPlayerCoordsRef = useRef(props.onPlayerCoords);
   const onAimBlendRef = useRef(props.onAimBlend);
+  const onTryFirePrimaryRef = useRef(props.onTryFirePrimary);
   const onReadyRef = useRef(props.onReady);
   const onToggleEditModeRef = useRef<(() => void) | null>(null);
   const bindingsRef = useRef(props.bindings);
@@ -344,10 +370,14 @@ export default function FpsScene(props: FpsSceneProps) {
     pointerLockBlockedRef.current = props.pointerLockBlocked;
     materialEditModeRef.current = props.materialEditMode;
     activePrimaryWeaponRef.current = props.activePrimaryWeapon;
+    roundsInMagRef.current = props.roundsInMag;
+    activeLowAmmoThresholdRef.current = props.activeLowAmmoThreshold;
+    fireModeRef.current = props.fireMode;
     surfaceTuningRef.current = props.surfaceTuning;
     onSurfacePickRef.current = props.onSurfacePick;
     onPlayerCoordsRef.current = props.onPlayerCoords;
     onAimBlendRef.current = props.onAimBlend;
+    onTryFirePrimaryRef.current = props.onTryFirePrimary;
     onReadyRef.current = props.onReady;
     onToggleEditModeRef.current = props.onToggleMaterialEditMode ?? null;
     skyPreviewModeRef.current = props.skyPreviewModeRef;
@@ -395,6 +425,8 @@ export default function FpsScene(props: FpsSceneProps) {
     let detachViewmodelOverlay: (() => void) | null = null;
     let viewmodelLighting: ViewmodelLighting | null = null;
     let viewWeapon: ViewWeapon | null = null;
+    let laserTracers: LaserTracerSystem | null = null;
+    let sounds: GameSoundManager | null = null;
     const landingMeshes: Mesh[] = [];
     const editableMaterials: Partial<Record<EditableSurfaceId, PBRMaterial>> = {};
     let appliedTuningSnapshot = "";
@@ -452,6 +484,8 @@ export default function FpsScene(props: FpsSceneProps) {
 
     void (async () => {
       gameCore = await createGameCore();
+      const levelRuntime = levelRuntimeRef.current;
+      gameCore.load_level(JSON.stringify(levelRuntime.config));
       gameCoreRef.current = gameCore;
       if (disposed || !canvas) {
         gameCore.free();
@@ -501,6 +535,8 @@ export default function FpsScene(props: FpsSceneProps) {
       scene.activeCamera = camera;
 
       scene.activeCameras = [camera];
+      sounds = createGameSoundManager(() => camera.position);
+      void sounds.preload();
 
       motionBlur = createMotionBlur(scene, camera, motionBlurTuningRef.current);
       appliedMotionBlurTuningSnapshot = JSON.stringify(motionBlurTuningRef.current);
@@ -540,40 +576,61 @@ export default function FpsScene(props: FpsSceneProps) {
       applyAllSurfaceTuning();
       appliedTuningSnapshot = JSON.stringify(surfaceTuningRef.current);
 
-      const platform = createFloorWithHoles(scene, floorMaterial);
+      const platform = createFloorWithHoles(
+        scene,
+        floorMaterial,
+        levelRuntime,
+      );
       tagEditableSurface(platform, "floor");
+      const pillarSpec = levelRuntime.pillar;
       const pillar = MeshBuilder.CreateCylinder(
         "pillar",
-        { height: PILLAR_HEIGHT, diameter: PILLAR_DIAMETER, tessellation: 32 },
+        {
+          height: pillarSpec.height,
+          diameter: pillarSpec.diameter,
+          tessellation: 32,
+        },
         scene,
       );
       tagEditableSurface(pillar, "pillar");
-      pillar.position = new Vector3(6, PILLAR_HEIGHT / 2, 2);
+      pillar.position = new Vector3(
+        pillarSpec.x,
+        pillarSpec.height / 2,
+        pillarSpec.z,
+      );
       pillar.material = pillarMaterial;
       pillar.checkCollisions = true;
 
-      const arenaWalls = createArenaPerimeterWalls(scene, wallMaterial);
+      const arenaWalls = createArenaPerimeterWalls(
+        scene,
+        wallMaterial,
+        levelRuntime,
+      );
       const eastCatwalk = createEastWallCatwalk(
         scene,
         catwalkDeckMaterial,
         catwalkEdgeMaterial,
+        levelRuntime,
       );
-      const jumpBlocks = createJumpBlocks(scene);
+      const jumpBlocks = createJumpBlocks(scene, levelRuntime.jumpBlocks);
       const arenaStructures = [...arenaWalls, ...eastCatwalk];
       for (const wall of arenaWalls) {
         tagEditableSurface(wall, "wall");
       }
-      tagEditableSurface(eastCatwalk[0], "catwalkDeck");
+      if (eastCatwalk[0]) {
+        tagEditableSurface(eastCatwalk[0], "catwalkDeck");
+      }
       for (const rail of eastCatwalk.slice(1)) {
         tagEditableSurface(rail, "catwalkEdge");
       }
-      landingMeshes.push(platform, eastCatwalk[0], ...jumpBlocks);
+      landingMeshes.push(platform, ...(eastCatwalk[0] ? [eastCatwalk[0]] : []), ...jumpBlocks);
 
       const [centerEnemyMeshes, loadedViewWeapon] = await Promise.all([
         loadCenterEnemy(scene),
         createViewWeapon(scene),
       ]);
       viewWeapon = loadedViewWeapon;
+      laserTracers = createLaserTracerSystem(scene);
       if (disposed || !canvas) {
         return;
       }
@@ -650,6 +707,8 @@ export default function FpsScene(props: FpsSceneProps) {
       let editLookAnchorX = 0;
       let editLookAnchorY = 0;
       let aimHeld = false;
+      let shootHeld = false;
+      let shootJustPressed = false;
       const pressedCodes = new Set<string>();
 
       const syncInput = () => {
@@ -754,6 +813,11 @@ export default function FpsScene(props: FpsSceneProps) {
           return;
         }
 
+        if (eventMatchesBinding(bindings, "shoot", event.code) && !event.repeat) {
+          shootJustPressed = true;
+          shootHeld = true;
+        }
+
         pressedCodes.add(event.code);
         syncInput();
         event.preventDefault();
@@ -765,12 +829,17 @@ export default function FpsScene(props: FpsSceneProps) {
         }
 
         pressedCodes.delete(event.code);
+        if (eventMatchesBinding(bindingsRef.current, "shoot", event.code)) {
+          shootHeld = false;
+        }
         syncInput();
         event.preventDefault();
       };
 
       const onWindowBlur = () => {
         aimHeld = false;
+        shootHeld = false;
+        shootJustPressed = false;
         if (pressedCodes.size === 0) {
           return;
         }
@@ -802,7 +871,7 @@ export default function FpsScene(props: FpsSceneProps) {
       };
 
       const onMouseDown = (event: MouseEvent) => {
-        if (event.button !== 2) {
+        if (event.button !== 0 && event.button !== 2) {
           return;
         }
         if (
@@ -812,12 +881,23 @@ export default function FpsScene(props: FpsSceneProps) {
         ) {
           return;
         }
+        if (event.button === 0) {
+          shootJustPressed = true;
+          shootHeld = true;
+          event.preventDefault();
+          return;
+        }
         aimHeld = true;
         event.preventDefault();
       };
 
       const onMouseUp = (event: MouseEvent) => {
-        if (event.button !== 2) {
+        if (event.button !== 0 && event.button !== 2) {
+          return;
+        }
+        if (event.button === 0) {
+          shootHeld = false;
+          event.preventDefault();
           return;
         }
         aimHeld = false;
@@ -880,10 +960,20 @@ export default function FpsScene(props: FpsSceneProps) {
         right: new Vector3(),
       };
       const weaponPreviousPosition = camera.position.clone();
+      const shotMuzzlePosition = new Vector3();
+      const shotDirection = new Vector3();
+      let footstepPhase = 0;
+      let footstepActivity = 0;
+      let previousFootstepX = gameCore.position_x();
+      let previousFootstepZ = gameCore.position_z();
+      let wasGroundedForFootstep = gameCore.on_ground();
       let aimFovBlend = 0;
       let aimBobBlend = 0;
       let flyModeActive = false;
       let collisionBlockedThisFrame = false;
+      let autoFireCooldown = 0;
+      let burstShotsRemaining = 0;
+      let burstCooldown = 0;
 
       const resolveLandingEyeY = (
         x: number,
@@ -920,6 +1010,10 @@ export default function FpsScene(props: FpsSceneProps) {
         }
 
         const deltaSeconds = engine!.getDeltaTime() / 1000;
+        autoFireCooldown = Math.max(0, autoFireCooldown - deltaSeconds);
+        burstCooldown = Math.max(0, burstCooldown - deltaSeconds);
+        const previousFootstepPhase = footstepPhase;
+        let horizontalFootstepSpeed = 0;
         const flyModeRequested =
           settingsRef.current.flyModeEnabled &&
           !materialEditModeRef.current &&
@@ -1011,6 +1105,84 @@ export default function FpsScene(props: FpsSceneProps) {
           }
 
           outdoorSky?.tickDayNight(deltaSeconds);
+        }
+
+        const footstepX = flyModeActive ? flyPosition.x : gameCore.position_x();
+        const footstepZ = flyModeActive ? flyPosition.z : gameCore.position_z();
+        const footstepDelta = Math.hypot(
+          footstepX - previousFootstepX,
+          footstepZ - previousFootstepZ,
+        );
+        previousFootstepX = footstepX;
+        previousFootstepZ = footstepZ;
+        horizontalFootstepSpeed = footstepDelta / Math.max(deltaSeconds, 1 / 120);
+        const bindings = bindingsRef.current;
+        const crouching = isBindingDown(bindings, "crouch", pressedCodes);
+        const sprinting = isBindingDown(bindings, "sprint", pressedCodes);
+        const currentGrounded = gameCore.on_ground();
+        const landedThisFrame =
+          !wasGroundedForFootstep &&
+          currentGrounded &&
+          !pausedRef.current &&
+          !deathVisibleRef.current &&
+          !flyModeActive &&
+          !materialEditModeRef.current &&
+          !gameCore.falling_through_hole();
+        if (landedThisFrame) {
+          sounds?.playFootstep({
+            volume: crouching ? 0.34 : 0.62,
+            playbackRate: 0.94 + Math.random() * 0.08,
+          });
+          footstepPhase = 0;
+          footstepActivity = 0;
+        }
+        wasGroundedForFootstep = currentGrounded;
+        const canStep =
+          !pausedRef.current &&
+          !deathVisibleRef.current &&
+          !flyModeActive &&
+          !materialEditModeRef.current &&
+          currentGrounded &&
+          !gameCore.falling_through_hole() &&
+          settingsRef.current.walkBobEnabled &&
+          horizontalFootstepSpeed > WALK_BOB_MIN_ACTIVITY_SPEED;
+        const footstepTarget = canStep ? 1 : 0;
+        const duration = Math.min(Math.max(settingsRef.current.walkBobDurationSec, 0.25), 1.2);
+        const durationT = (duration - 0.25) / (1.2 - 0.25);
+        const walkFade = 4 + (6 - 4) * durationT;
+        footstepActivity +=
+          (footstepTarget - footstepActivity) *
+          (1 - Math.exp(-walkFade * deltaSeconds));
+        if (!canStep) {
+          footstepActivity *= Math.exp(-10 * deltaSeconds);
+          if (footstepActivity < 0.01) {
+            footstepActivity = 0;
+            footstepPhase = 0;
+          }
+        } else if (footstepActivity > 0.35) {
+          const cycleHz = 1 / duration;
+          const freqShare = 1.85 / (1.85 + 0.38 * WALK_SPEED);
+          const bobFreq =
+            cycleHz * freqShare +
+            horizontalFootstepSpeed * ((cycleHz * (1 - freqShare)) / WALK_SPEED);
+          footstepPhase += deltaSeconds * bobFreq * Math.PI * 2 * footstepActivity;
+          const beforeHalf = Math.floor(previousFootstepPhase / Math.PI);
+          const afterHalf = Math.floor(footstepPhase / Math.PI);
+          for (let half = beforeHalf + 1; half <= afterHalf; half += 1) {
+            const speedNorm = horizontalFootstepSpeed / Math.max(WALK_SPEED, 0.1);
+            const playbackRate = Math.min(
+              Math.max(0.94 + (speedNorm - 1) * 0.06, 0.9),
+              1.08,
+            );
+            let volume = 0.5;
+            if (crouching) volume *= 0.5;
+            else if (sprinting) volume *= 1.08;
+            const crouchScale = crouching ? CROUCH_EYE_RATIO : 1;
+            sounds?.playFootstep({
+              volume: volume * crouchScale,
+              playbackRate,
+            });
+          }
         }
 
         outdoorSky?.update(camera);
@@ -1114,6 +1286,8 @@ export default function FpsScene(props: FpsSceneProps) {
           tuning: viewWeaponTuningRef.current,
           roundDisplayTuning: roundDisplayTuningRef.current,
           roundDisplayPreview: roundDisplayPreviewRef.current,
+          roundCount: roundsInMagRef.current,
+          roundDisplayLow: roundsInMagRef.current <= activeLowAmmoThresholdRef.current,
           visible: !deathVisibleRef.current && !materialEditModeRef.current,
         });
         if (viewWeapon) {
@@ -1122,6 +1296,49 @@ export default function FpsScene(props: FpsSceneProps) {
             viewWeapon.shadowMeshes,
           );
         }
+        const canShoot =
+          !pausedRef.current &&
+          !deathVisibleRef.current &&
+          !materialEditModeRef.current &&
+          !flyModeActive &&
+          viewWeapon != null &&
+          laserTracers != null &&
+          sounds != null;
+        const activeFireMode =
+          activePrimaryWeaponRef.current === "pistol" ? "single" : fireModeRef.current;
+        let shotsToFire = 0;
+        if (canShoot) {
+          if (burstShotsRemaining > 0 && burstCooldown <= 0) {
+            shotsToFire = 1;
+            burstShotsRemaining -= 1;
+            burstCooldown = BURST_INTERVAL;
+          } else if (activeFireMode === "auto" && shootHeld && autoFireCooldown <= 0) {
+            shotsToFire = 1;
+            autoFireCooldown = AUTO_FIRE_INTERVAL;
+          } else if (activeFireMode === "burst" && shootJustPressed && burstShotsRemaining <= 0) {
+            shotsToFire = 1;
+            burstShotsRemaining = BURST_SHOT_COUNT - 1;
+            burstCooldown = BURST_INTERVAL;
+          } else if (activeFireMode === "single" && shootJustPressed) {
+            shotsToFire = 1;
+          }
+        } else {
+          burstShotsRemaining = 0;
+        }
+        shootJustPressed = false;
+
+        for (let i = 0; i < shotsToFire; i += 1) {
+          const shot = onTryFirePrimaryRef.current?.();
+          if (!shot) {
+            burstShotsRemaining = 0;
+            break;
+          }
+          viewWeapon?.flashMuzzle();
+          viewWeapon?.getMuzzleWorld(shotMuzzlePosition, shotDirection, camera);
+          laserTracers?.spawn(shotMuzzlePosition, shotDirection, BULLET_MAX_RANGE);
+          sounds?.playShot();
+        }
+        laserTracers?.update(deltaSeconds);
 
         onPlayerCoordsRef.current?.({
           x: flyModeActive ? flyPosition.x : gameCore.position_x(),
@@ -1162,6 +1379,8 @@ export default function FpsScene(props: FpsSceneProps) {
       motionBlur?.dispose();
       flashlight?.dispose();
       viewWeapon?.dispose();
+      laserTracers?.dispose();
+      sounds?.dispose();
       scene?.dispose();
       engine?.dispose();
       gameCore?.free();

@@ -4,12 +4,7 @@ import {
   PBRMaterial,
   Scene,
 } from "@babylonjs/core";
-import {
-  WALL_HEIGHT,
-  WALL_PLATFORM_HALF,
-  WALL_SPAN,
-  WALL_THICKNESS,
-} from "@/lib/wall/wallAssets";
+import type { LevelRuntime } from "@/lib/level/types";
 
 function createWallBox(
   scene: Scene,
@@ -34,7 +29,6 @@ function createWallBox(
   return wall;
 }
 
-/** 45° corner block where two perimeter walls meet — fills the exterior junction. */
 function createWallChamferCorner(
   scene: Scene,
   material: PBRMaterial,
@@ -42,11 +36,13 @@ function createWallChamferCorner(
   cornerX: number,
   cornerZ: number,
   centerY: number,
+  wallHeight: number,
+  wallThickness: number,
 ): Mesh {
-  const size = WALL_THICKNESS / Math.SQRT2;
+  const size = wallThickness / Math.SQRT2;
   const corner = MeshBuilder.CreateBox(
     name,
-    { width: size, height: WALL_HEIGHT, depth: size },
+    { width: size, height: wallHeight, depth: size },
     scene,
   );
   corner.position.set(cornerX, centerY, cornerZ);
@@ -61,11 +57,12 @@ function createWallChamferCorner(
 export function createArenaPerimeterWalls(
   scene: Scene,
   material: PBRMaterial,
+  level: LevelRuntime,
 ): Mesh[] {
-  const half = WALL_PLATFORM_HALF;
-  const thickness = WALL_THICKNESS;
-  const height = WALL_HEIGHT;
-  const span = WALL_SPAN;
+  const half = level.platformHalf;
+  const thickness = level.wallThickness;
+  const height = level.wallHeight;
+  const span = level.wallSpan;
   const centerY = height / 2;
 
   const northZ = -half - thickness / 2;
@@ -114,6 +111,8 @@ export function createArenaPerimeterWalls(
       cornerInset,
       -cornerInset,
       centerY,
+      height,
+      thickness,
     ),
     createWallChamferCorner(
       scene,
@@ -122,6 +121,8 @@ export function createArenaPerimeterWalls(
       cornerInset,
       cornerInset,
       centerY,
+      height,
+      thickness,
     ),
   ];
 }

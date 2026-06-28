@@ -3,6 +3,7 @@ export type BindingAction =
   | "backward"
   | "strafeLeft"
   | "strafeRight"
+  | "shoot"
   | "aim"
   | "jump"
   | "crouch"
@@ -26,6 +27,7 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
   backward: "KeyS",
   strafeLeft: "KeyA",
   strafeRight: "KeyD",
+  shoot: "Enter",
   aim: "KeyZ",
   jump: "Space",
   crouch: ["ControlLeft", "ControlRight"],
@@ -46,6 +48,7 @@ export const BINDING_ROWS: Array<{ id: BindingAction; label: string }> = [
   { id: "backward", label: "Move backward" },
   { id: "strafeLeft", label: "Strafe left" },
   { id: "strafeRight", label: "Strafe right" },
+  { id: "shoot", label: "Shoot" },
   { id: "aim", label: "Aim down sights" },
   { id: "jump", label: "Jump" },
   { id: "crouch", label: "Crouch" },
@@ -71,6 +74,7 @@ const CODE_LABELS: Record<string, string> = {
   KeyF: "F",
   KeyN: "N",
   KeyC: "C",
+  Enter: "Enter",
   Space: "Space",
   Escape: "Esc",
   ShiftLeft: "Shift",

@@ -1,15 +1,5 @@
 import { Mesh, MeshBuilder, PBRMaterial, Scene } from "@babylonjs/core";
-import {
-  CATWALK_DECK_THICKNESS,
-  CATWALK_RAIL_HEIGHT,
-  CATWALK_RAIL_THICKNESS,
-  CATWALK_WEST_EDGE_X,
-  CATWALK_Z_SPAN,
-  WALL_HEIGHT,
-  WALL_OUTER_EAST_X,
-  WALL_OUTER_NORTH_Z,
-  WALL_OUTER_SOUTH_Z,
-} from "@/lib/wall/wallAssets";
+import type { CatwalkRuntime, LevelRuntime } from "@/lib/level/types";
 
 function createCatwalkBox(
   scene: Scene,
@@ -30,34 +20,32 @@ function createCatwalkBox(
   return mesh;
 }
 
-/**
- * Catwalk slab on top of the east wall (and north/south wall tops at the ends),
- * running the full outer north → south extent. Overhangs west 140% of the original 25% reach (35% of deck width).
- */
-export function createEastWallCatwalk(
+function createEastWallCatwalkFromRuntime(
   scene: Scene,
   deckMaterial: PBRMaterial,
   edgeMaterial: PBRMaterial,
+  catwalk: CatwalkRuntime,
+  wallHeight: number,
 ): Mesh[] {
-  const westEdgeX = CATWALK_WEST_EDGE_X;
-  const eastEdgeX = WALL_OUTER_EAST_X;
+  const westEdgeX = catwalk.westEdgeX;
+  const eastEdgeX = catwalk.eastEdgeX;
   const deckWidth = eastEdgeX - westEdgeX;
-  const deckBottomY = WALL_HEIGHT;
-  const deckTopY = deckBottomY + CATWALK_DECK_THICKNESS;
-  const deckCenterY = deckBottomY + CATWALK_DECK_THICKNESS * 0.5;
+  const deckBottomY = wallHeight;
+  const deckTopY = deckBottomY + catwalk.deckThickness;
+  const deckCenterY = deckBottomY + catwalk.deckThickness * 0.5;
   const deckCenterX = (westEdgeX + eastEdgeX) * 0.5;
-  const deckCenterZ = (WALL_OUTER_NORTH_Z + WALL_OUTER_SOUTH_Z) * 0.5;
-  const railCenterY = deckTopY + CATWALK_RAIL_HEIGHT * 0.5;
-  const railHalf = CATWALK_RAIL_THICKNESS * 0.5;
-  const endRailWidth = deckWidth - CATWALK_RAIL_THICKNESS * 2;
+  const deckCenterZ = (catwalk.northZ + catwalk.southZ) * 0.5;
+  const railCenterY = deckTopY + catwalk.railHeight * 0.5;
+  const railHalf = catwalk.railThickness * 0.5;
+  const endRailWidth = deckWidth - catwalk.railThickness * 2;
 
   const deck = createCatwalkBox(
     scene,
     deckMaterial,
     "catwalkDeck",
     deckWidth,
-    CATWALK_DECK_THICKNESS,
-    CATWALK_Z_SPAN,
+    catwalk.deckThickness,
+    catwalk.zSpan,
     deckCenterX,
     deckCenterY,
     deckCenterZ,
@@ -67,9 +55,9 @@ export function createEastWallCatwalk(
     scene,
     edgeMaterial,
     "catwalkRailWest",
-    CATWALK_RAIL_THICKNESS,
-    CATWALK_RAIL_HEIGHT,
-    CATWALK_Z_SPAN,
+    catwalk.railThickness,
+    catwalk.railHeight,
+    catwalk.zSpan,
     westEdgeX + railHalf,
     railCenterY,
     deckCenterZ,
@@ -79,9 +67,9 @@ export function createEastWallCatwalk(
     scene,
     edgeMaterial,
     "catwalkRailEast",
-    CATWALK_RAIL_THICKNESS,
-    CATWALK_RAIL_HEIGHT,
-    CATWALK_Z_SPAN,
+    catwalk.railThickness,
+    catwalk.railHeight,
+    catwalk.zSpan,
     eastEdgeX - railHalf,
     railCenterY,
     deckCenterZ,
@@ -92,11 +80,11 @@ export function createEastWallCatwalk(
     edgeMaterial,
     "catwalkRailNorth",
     endRailWidth,
-    CATWALK_RAIL_HEIGHT,
-    CATWALK_RAIL_THICKNESS,
+    catwalk.railHeight,
+    catwalk.railThickness,
     deckCenterX,
     railCenterY,
-    WALL_OUTER_NORTH_Z + railHalf,
+    catwalk.northZ + railHalf,
   );
 
   const railSouth = createCatwalkBox(
@@ -104,12 +92,31 @@ export function createEastWallCatwalk(
     edgeMaterial,
     "catwalkRailSouth",
     endRailWidth,
-    CATWALK_RAIL_HEIGHT,
-    CATWALK_RAIL_THICKNESS,
+    catwalk.railHeight,
+    catwalk.railThickness,
     deckCenterX,
     railCenterY,
-    WALL_OUTER_SOUTH_Z - railHalf,
+    catwalk.southZ - railHalf,
   );
 
   return [deck, railWest, railEast, railNorth, railSouth];
+}
+
+export function createEastWallCatwalk(
+  scene: Scene,
+  deckMaterial: PBRMaterial,
+  edgeMaterial: PBRMaterial,
+  level: LevelRuntime,
+): Mesh[] {
+  if (!level.catwalk) {
+    return [];
+  }
+
+  return createEastWallCatwalkFromRuntime(
+    scene,
+    deckMaterial,
+    edgeMaterial,
+    level.catwalk,
+    level.wallHeight,
+  );
 }

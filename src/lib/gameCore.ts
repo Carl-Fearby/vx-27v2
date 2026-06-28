@@ -11,6 +11,7 @@ export interface GameCoreModule {
 export interface GameCoreInstance {
   free(): void;
   reset(): void;
+  load_level(json: string): void;
   set_input(
     forward: boolean,
     backward: boolean,

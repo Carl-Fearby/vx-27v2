@@ -6,14 +6,8 @@ import {
   Scene,
   Vector3,
 } from "@babylonjs/core";
-import {
-  FLOOR_HOLES,
-  type FloorHole,
-} from "@/lib/floor/floorHoles";
-import {
-  FLOOR_PLATFORM_SIZE,
-  FLOOR_SLAB_DEPTH,
-} from "@/lib/floor/floorAssets";
+import type { FloorHole } from "@/lib/floor/floorHoles";
+import type { LevelRuntime } from "@/lib/level/types";
 
 const HOLE_WALL_TESSELATION = 64;
 
@@ -21,17 +15,18 @@ function subtractHoleFromSlab(
   scene: Scene,
   slab: Mesh,
   hole: FloorHole,
+  slabDepth: number,
 ): Mesh {
   const cutter = MeshBuilder.CreateCylinder(
     `floor-hole-cut-${hole.x}-${hole.z}`,
     {
-      height: FLOOR_SLAB_DEPTH + 0.08,
+      height: slabDepth + 0.08,
       diameter: hole.radius * 2,
       tessellation: HOLE_WALL_TESSELATION,
     },
     scene,
   );
-  cutter.position = new Vector3(hole.x, -FLOOR_SLAB_DEPTH / 2, hole.z);
+  cutter.position = new Vector3(hole.x, -slabDepth / 2, hole.z);
 
   const result = CSG.FromMesh(slab)
     .subtract(CSG.FromMesh(cutter))
@@ -48,11 +43,12 @@ function createHoleWallSleeve(
   scene: Scene,
   material: PBRMaterial,
   hole: FloorHole,
+  slabDepth: number,
 ): Mesh {
   const wall = MeshBuilder.CreateCylinder(
     `floor-hole-wall-${hole.x}-${hole.z}`,
     {
-      height: FLOOR_SLAB_DEPTH,
+      height: slabDepth,
       diameter: hole.radius * 2,
       tessellation: HOLE_WALL_TESSELATION,
       cap: Mesh.NO_CAP,
@@ -60,7 +56,7 @@ function createHoleWallSleeve(
     },
     scene,
   );
-  wall.position = new Vector3(hole.x, -FLOOR_SLAB_DEPTH / 2, hole.z);
+  wall.position = new Vector3(hole.x, -slabDepth / 2, hole.z);
   wall.material = material;
   wall.isPickable = false;
   wall.checkCollisions = false;
@@ -75,27 +71,29 @@ function createHoleWallSleeve(
 export function createFloorWithHoles(
   scene: Scene,
   material: PBRMaterial,
-  holes: FloorHole[] = FLOOR_HOLES,
+  level: LevelRuntime,
 ): Mesh {
+  const holes = level.floorHoles;
+  const slabDepth = level.floorSlabDepth;
   let slab = MeshBuilder.CreateBox(
     "platform-slab",
     {
-      width: FLOOR_PLATFORM_SIZE,
-      height: FLOOR_SLAB_DEPTH,
-      depth: FLOOR_PLATFORM_SIZE,
+      width: level.platformSize,
+      height: level.floorSlabDepth,
+      depth: level.platformSize,
     },
     scene,
   );
-  slab.position.y = -FLOOR_SLAB_DEPTH / 2;
+  slab.position.y = -level.floorSlabDepth / 2;
   slab.material = material;
 
   for (const hole of holes) {
-    slab = subtractHoleFromSlab(scene, slab, hole);
+    slab = subtractHoleFromSlab(scene, slab, hole, slabDepth);
   }
 
   const parts: Mesh[] = [slab];
   for (const hole of holes) {
-    parts.push(createHoleWallSleeve(scene, material, hole));
+    parts.push(createHoleWallSleeve(scene, material, hole, slabDepth));
   }
 
   const merged =

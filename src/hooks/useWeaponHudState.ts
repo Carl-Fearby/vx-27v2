@@ -77,8 +77,13 @@ export function useWeaponHudState({
     resolveActiveAmmoHudState("rifle", createArenaAmmoPool()),
   );
 
-  ammoPoolRef.current = ammoPool;
-  fireModeByWeaponRef.current = fireModeByWeapon;
+  useEffect(() => {
+    ammoPoolRef.current = ammoPool;
+  }, [ammoPool]);
+
+  useEffect(() => {
+    fireModeByWeaponRef.current = fireModeByWeapon;
+  }, [fireModeByWeapon]);
 
   const applyFireModeForWeapon = useCallback((weaponId: PrimaryWeaponId) => {
     const resolved = resolveFireModeForWeapon(
@@ -138,6 +143,32 @@ export function useWeaponHudState({
     };
     setFireModeByWeapon({ ...fireModeByWeaponRef.current });
     setFireMode(resolved);
+  }, [activePrimaryWeapon]);
+
+  const tryFirePrimary = useCallback(() => {
+    const weaponId = activePrimaryWeapon;
+    const currentPool = ammoPoolRef.current;
+    const currentAmmo = currentPool[weaponId];
+    if (!currentAmmo || currentAmmo.rounds <= 0) {
+      return null;
+    }
+
+    const nextPool: AmmoPool = {
+      rifle: { ...currentPool.rifle },
+      pistol: { ...currentPool.pistol },
+    };
+    nextPool[weaponId].rounds = Math.max(0, nextPool[weaponId].rounds - 1);
+    ammoPoolRef.current = nextPool;
+    setAmmoPool(nextPool);
+    setActiveAmmoHud(resolveActiveAmmoHudState(weaponId, nextPool));
+    return {
+      weaponId,
+      roundsInMag: nextPool[weaponId].rounds,
+      fireMode: resolveFireModeForWeapon(
+        weaponId,
+        fireModeByWeaponRef.current[weaponId],
+      ),
+    };
   }, [activePrimaryWeapon]);
 
   const onKeyDown = useCallback(
@@ -219,6 +250,7 @@ export function useWeaponHudState({
     fireMode,
     activeFireModes,
     cycleFireModeHud,
+    tryFirePrimary,
     selectPrimaryWeapon,
     setAmmoPool,
     setSecondaryStock,

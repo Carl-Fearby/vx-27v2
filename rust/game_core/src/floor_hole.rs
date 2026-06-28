@@ -12,14 +12,6 @@ pub const HOLE_FALL_REMOVE_DEPTH: f32 = 12.0;
 pub const FLOOR_FOOT_Y: f32 = 0.0;
 pub const DEATH_FALL_DROP: f32 = 12.0;
 
-pub fn default_floor_holes() -> Vec<FloorHole> {
-    vec![FloorHole {
-        x: -8.0,
-        z: 2.0,
-        radius: 1.4,
-    }]
-}
-
 pub fn point_in_floor_hole(x: f32, z: f32, holes: &[FloorHole], inset: f32) -> bool {
     for hole in holes {
         let dx = x - hole.x;
@@ -63,7 +55,11 @@ mod tests {
 
     #[test]
     fn point_in_floor_hole_respects_inset() {
-        let holes = default_floor_holes();
+        let holes = vec![FloorHole {
+            x: -8.0,
+            z: 2.0,
+            radius: 1.4,
+        }];
         assert!(point_in_floor_hole(-8.0, 2.0, &holes, 0.0));
         assert!(!point_in_floor_hole(-8.0 + 1.45, 2.0, &holes, 0.0));
         assert!(!point_in_floor_hole(-8.0 + 1.0, 2.0, &holes, 0.5));
@@ -71,7 +67,11 @@ mod tests {
 
     #[test]
     fn commit_uses_inset_centre_and_foot_samples() {
-        let holes = default_floor_holes();
+        let holes = vec![FloorHole {
+            x: -8.0,
+            z: 2.0,
+            radius: 1.4,
+        }];
         assert!(is_committed_over_floor_hole(-8.0 + 0.5, 2.0, &holes));
         assert!(is_committed_over_floor_hole(-8.0 + 1.35, 2.0, &holes));
     }

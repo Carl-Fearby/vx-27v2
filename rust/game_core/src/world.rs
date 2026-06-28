@@ -1,23 +1,14 @@
 use crate::floor_hole::{
-    default_floor_holes, is_committed_over_floor_hole, point_in_floor_hole, FloorHole,
-    FLOOR_FOOT_Y, HOLE_FALL_GRAVITY, HOLE_FALL_REMOVE_DEPTH,
+    is_committed_over_floor_hole, point_in_floor_hole, FloorHole, HOLE_FALL_GRAVITY,
+    HOLE_FALL_REMOVE_DEPTH,
 };
+use crate::level_config::LevelPlayerSpawn;
 use crate::player::{PlayerState, EYE_HEIGHT, PLAYER_RADIUS};
 
-const PLATFORM_HALF_EXTENT: f32 = 20.0;
 /** Mirrors GE2 `PlayerController.js` `STEP_UP_MAX`. */
 const STEP_UP_MAX: f32 = 0.45;
 const STEP_UP_SLACK: f32 = 0.06;
 const ELEVATED_FOOT_SLACK: f32 = 0.12;
-
-/// Keep in sync with `src/lib/wall/wallAssets.ts` and `walkableSurfaces.ts`.
-const WALL_HEIGHT: f32 = 4.0;
-const CATWALK_DECK_THICKNESS: f32 = 0.22;
-const CATWALK_WEST_EDGE_X: f32 = 6.0;
-const WALL_OUTER_EAST_X: f32 = 20.5;
-const WALL_OUTER_NORTH_Z: f32 = -20.5;
-const WALL_OUTER_SOUTH_Z: f32 = 20.5;
-const CATWALK_FOOT_Y: f32 = WALL_HEIGHT + CATWALK_DECK_THICKNESS;
 
 const FOOT_SAMPLE_OFFSETS: [(f32, f32); 5] = [
     (0.0, 0.0),
@@ -28,7 +19,7 @@ const FOOT_SAMPLE_OFFSETS: [(f32, f32); 5] = [
 ];
 
 #[derive(Clone, Copy, Debug)]
-struct Aabb {
+pub(crate) struct Aabb {
     min_x: f32,
     max_x: f32,
     min_z: f32,
@@ -87,66 +78,79 @@ impl Aabb {
     }
 }
 
-fn flat_surface(
-    min_x: f32,
-    max_x: f32,
-    min_z: f32,
-    max_z: f32,
-    foot_y: f32,
-    honor_floor_holes: bool,
-    overhead_only: bool,
-) -> Aabb {
-    Aabb {
-        min_x,
-        max_x,
-        min_z,
-        max_z,
-        stand_height: foot_y + EYE_HEIGHT,
-        honor_floor_holes,
-        overhead_only,
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct World {
+    platform_half: f32,
+    floor_foot_y: f32,
     surfaces: Vec<Aabb>,
     floor_holes: Vec<FloorHole>,
+    player_spawn: LevelPlayerSpawn,
 }
 
 impl Default for World {
     fn default() -> Self {
         Self {
-            surfaces: vec![
-                flat_surface(
-                    -PLATFORM_HALF_EXTENT,
-                    PLATFORM_HALF_EXTENT,
-                    -PLATFORM_HALF_EXTENT,
-                    PLATFORM_HALF_EXTENT,
-                    FLOOR_FOOT_Y,
-                    true,
-                    false,
-                ),
-                flat_surface(
-                    CATWALK_WEST_EDGE_X,
-                    WALL_OUTER_EAST_X,
-                    WALL_OUTER_NORTH_Z,
-                    WALL_OUTER_SOUTH_Z,
-                    CATWALK_FOOT_Y,
-                    false,
-                    true,
-                ),
-                flat_surface(-15.0, -13.0, -16.5, -14.5, 0.5, false, false),
-                flat_surface(-12.5, -10.5, -14.0, -12.0, 1.0, false, false),
-                flat_surface(-10.25, -7.75, -11.75, -9.25, 1.5, false, false),
-            ],
-            floor_holes: default_floor_holes(),
+            platform_half: 20.0,
+            floor_foot_y: 0.0,
+            surfaces: Vec::new(),
+            floor_holes: Vec::new(),
+            player_spawn: LevelPlayerSpawn {
+                x: 0.0,
+                z: -8.0,
+                foot_y: 0.0,
+                yaw: 0.0,
+            },
         }
     }
 }
 
 impl World {
+    pub(crate) fn flat_surface(
+        min_x: f32,
+        max_x: f32,
+        min_z: f32,
+        max_z: f32,
+        foot_y: f32,
+        honor_floor_holes: bool,
+        overhead_only: bool,
+    ) -> Aabb {
+        Aabb {
+            min_x,
+            max_x,
+            min_z,
+            max_z,
+            stand_height: foot_y + EYE_HEIGHT,
+            honor_floor_holes,
+            overhead_only,
+        }
+    }
+
+    pub(crate) fn new(
+        platform_half: f32,
+        floor_foot_y: f32,
+        floor_holes: Vec<FloorHole>,
+        surfaces: Vec<Aabb>,
+        player_spawn: LevelPlayerSpawn,
+    ) -> Self {
+        Self {
+            platform_half,
+            floor_foot_y,
+            surfaces,
+            floor_holes,
+            player_spawn,
+        }
+    }
+
+    pub fn from_level_json(json: &str) -> Result<Self, String> {
+        crate::level_config::world_from_level_json(json)
+    }
+
+    pub fn player_spawn(&self) -> LevelPlayerSpawn {
+        self.player_spawn
+    }
+
     pub fn floor_foot_y(&self) -> f32 {
-        FLOOR_FOOT_Y
+        self.floor_foot_y
     }
 
     fn floor_support_eye(&self, x: f32, z: f32, eye_height: f32) -> Option<f32> {
@@ -214,7 +218,7 @@ impl World {
     }
 
     fn support_foot_y(&self, x: f32, z: f32) -> Option<f32> {
-        self.support_eye_height(x, z, FLOOR_FOOT_Y, EYE_HEIGHT)
+        self.support_eye_height(x, z, self.floor_foot_y, EYE_HEIGHT)
             .map(|eye| eye - EYE_HEIGHT)
     }
 
@@ -276,8 +280,8 @@ impl World {
             return;
         }
 
-        let min_bound = -PLATFORM_HALF_EXTENT + PLAYER_RADIUS;
-        let max_bound = PLATFORM_HALF_EXTENT - PLAYER_RADIUS;
+        let min_bound = -self.platform_half + PLAYER_RADIUS;
+        let max_bound = self.platform_half - PLAYER_RADIUS;
         player.x = player.x.clamp(min_bound, max_bound);
         player.z = player.z.clamp(min_bound, max_bound);
 
@@ -319,24 +323,25 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::level_config::square_arena_world;
     use crate::player::PlayerState;
 
     #[test]
     fn keeps_player_inside_platform_bounds() {
-        let world = World::default();
+        let world = square_arena_world();
         let mut player = PlayerState::default();
         player.x = 100.0;
         player.z = -100.0;
 
         world.resolve_player(&mut player, EYE_HEIGHT);
 
-        assert!(player.x <= PLATFORM_HALF_EXTENT);
-        assert!(player.z >= -PLATFORM_HALF_EXTENT);
+        assert!(player.x <= world.platform_half);
+        assert!(player.z >= -world.platform_half);
     }
 
     #[test]
     fn hole_excludes_main_floor_support_at_centre() {
-        let world = World::default();
+        let world = square_arena_world();
         let mut player = PlayerState::default();
         player.x = -8.0;
         player.z = 2.0;
@@ -347,7 +352,7 @@ mod tests {
 
     #[test]
     fn main_floor_keeps_rim_support() {
-        let world = World::default();
+        let world = square_arena_world();
         let mut player = PlayerState::default();
         player.x = -8.0 + 1.35;
         player.z = 2.0;
@@ -358,50 +363,53 @@ mod tests {
 
     #[test]
     fn elevated_surfaces_ignore_floor_holes() {
-        let world = World::default();
+        let world = square_arena_world();
+        let catwalk_foot_y = 4.0 + 0.22;
         let catwalk_eye =
-            world.support_eye_height(10.0, 0.0, CATWALK_FOOT_Y, EYE_HEIGHT);
+            world.support_eye_height(10.0, 0.0, catwalk_foot_y, EYE_HEIGHT);
         assert!(catwalk_eye.is_some());
         assert!(catwalk_eye.unwrap() > EYE_HEIGHT + 2.0);
     }
 
     #[test]
     fn floor_under_catwalk_does_not_snap_or_block() {
-        let world = World::default();
-        let under_catwalk = world.support_eye_height(10.0, 0.0, FLOOR_FOOT_Y, EYE_HEIGHT);
+        let world = square_arena_world();
+        let floor_foot_y = world.floor_foot_y();
+        let under_catwalk = world.support_eye_height(10.0, 0.0, floor_foot_y, EYE_HEIGHT);
         assert!(under_catwalk.is_some());
         assert!((under_catwalk.unwrap() - EYE_HEIGHT).abs() < 0.01);
         assert!(!world.blocks_walk_onto_ledge(
             10.0,
             0.0,
             EYE_HEIGHT,
-            FLOOR_FOOT_Y,
+            floor_foot_y,
             EYE_HEIGHT,
         ));
     }
 
     #[test]
     fn blocks_tall_ledge_without_jump() {
-        let world = World::default();
+        let world = square_arena_world();
+        let floor_foot_y = world.floor_foot_y();
         assert!(world.blocks_walk_onto_ledge(
             -11.5,
             -13.0,
             EYE_HEIGHT,
-            FLOOR_FOOT_Y,
+            floor_foot_y,
             EYE_HEIGHT,
         ));
         assert!(!world.blocks_walk_onto_ledge(
             -14.0,
             -15.5,
             EYE_HEIGHT,
-            FLOOR_FOOT_Y,
+            floor_foot_y,
             EYE_HEIGHT,
         ));
     }
 
     #[test]
     fn low_block_steps_up_on_ground() {
-        let world = World::default();
+        let world = square_arena_world();
         let mut player = PlayerState::default();
         player.x = -14.0;
         player.z = -15.5;
@@ -415,7 +423,7 @@ mod tests {
 
     #[test]
     fn elevated_support_uses_foot_samples_near_edge() {
-        let world = World::default();
+        let world = square_arena_world();
         let center = world
             .support_eye_height(-14.0, -15.5, 0.5, EYE_HEIGHT)
             .unwrap();
@@ -428,15 +436,16 @@ mod tests {
 
     #[test]
     fn jump_blocks_raise_support_height() {
-        let world = World::default();
+        let world = square_arena_world();
+        let floor_foot_y = world.floor_foot_y();
         let low = world
-            .support_eye_height(-14.0, -15.5, FLOOR_FOOT_Y, EYE_HEIGHT)
+            .support_eye_height(-14.0, -15.5, floor_foot_y, EYE_HEIGHT)
             .unwrap();
         let mid = world
-            .support_eye_height(-11.5, -13.0, FLOOR_FOOT_Y, EYE_HEIGHT)
+            .support_eye_height(-11.5, -13.0, floor_foot_y, EYE_HEIGHT)
             .unwrap();
         let high = world
-            .support_eye_height(-9.0, -10.5, FLOOR_FOOT_Y, EYE_HEIGHT)
+            .support_eye_height(-9.0, -10.5, floor_foot_y, EYE_HEIGHT)
             .unwrap();
         assert!(mid > low);
         assert!(high > mid);
@@ -444,7 +453,7 @@ mod tests {
 
     #[test]
     fn hole_fall_waits_until_centre_leaves_main_deck() {
-        let world = World::default();
+        let world = square_arena_world();
         let mut player = PlayerState::default();
         player.x = -8.0 + 1.35;
         player.z = 2.0;

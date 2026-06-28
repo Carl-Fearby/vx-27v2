@@ -1,12 +1,13 @@
+import { levelJsonUrl } from "@/lib/level/deriveLevelRuntime";
+import { CENTER_ENEMY_MODEL_URL } from "@/lib/enemies/enemyAssets";
+import {
+  GE2_PLAYER_WEAPON_MODELS,
+} from "@/lib/assets/ge2ImportedAssets";
 import {
   MOON_TEXTURE_URL,
   SKY_DAY_URL,
   SKY_NIGHT_URL,
 } from "@/lib/lighting/tuning";
-import { CENTER_ENEMY_MODEL_URL } from "@/lib/enemies/enemyAssets";
-import {
-  GE2_PLAYER_WEAPON_MODELS,
-} from "@/lib/assets/ge2ImportedAssets";
 
 const PRELOAD_STEPS = [
   { label: "Game core", weight: 0.2 },
@@ -16,7 +17,7 @@ const PRELOAD_STEPS = [
   { label: "View weapons", weight: 0.15 },
 ] as const;
 
-const WORLD_ASSETS = [SKY_DAY_URL, SKY_NIGHT_URL, MOON_TEXTURE_URL];
+const WORLD_ASSETS = [SKY_DAY_URL, SKY_NIGHT_URL, MOON_TEXTURE_URL, levelJsonUrl()];
 const MODEL_ASSETS = [CENTER_ENEMY_MODEL_URL];
 const VIEW_WEAPON_ASSETS = [
   GE2_PLAYER_WEAPON_MODELS.pistol,

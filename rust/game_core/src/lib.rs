@@ -2,6 +2,7 @@ mod death;
 mod flashlight;
 mod floor_hole;
 mod input;
+mod level_config;
 mod look;
 mod player;
 mod world;
@@ -40,9 +41,19 @@ impl GameCore {
 
     pub fn reset(&mut self) {
         self.input = InputState::default();
-        self.player.reset();
+        self.player.reset_to_spawn(self.world.player_spawn());
         self.flashlight = FlashlightState::default();
         self.death.clear();
+    }
+
+    pub fn load_level(&mut self, json: &str) -> Result<(), JsValue> {
+        let world = World::from_level_json(json).map_err(|error| JsValue::from_str(&error))?;
+        let spawn = world.player_spawn();
+        self.world = world;
+        self.player.reset_to_spawn(spawn);
+        self.input.clear();
+        self.death.clear();
+        Ok(())
     }
 
     pub fn press_flashlight_toggle(&mut self) {

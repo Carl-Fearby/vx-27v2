@@ -4,6 +4,7 @@ import {
   Matrix,
   Mesh,
   MeshBuilder,
+  PointLight,
   Quaternion,
   Scene,
   StandardMaterial,
@@ -52,6 +53,12 @@ export type ViewWeapon = {
   root: TransformNode;
   shadowMeshes: Mesh[];
   setActiveWeapon: (weapon: PrimaryWeaponId) => void;
+  flashMuzzle: () => void;
+  getMuzzleWorld: (
+    outPosition: Vector3,
+    outDirection: Vector3,
+    camera?: FreeCamera,
+  ) => void;
   update: (camera: FreeCamera, options: ViewWeaponUpdateOptions) => void;
   dispose: () => void;
 };
@@ -98,6 +105,7 @@ const DEFAULT_BODY_LOOK_UP_AMOUNT = 1.35;
 const DEFAULT_BODY_LOOK_DOWN_AMOUNT = 1.35;
 const BODY_LOOK_PITCH_LIMIT = Math.PI / 2 - 0.05;
 const RETICLE_TEXTURE_URL = "/crosshair/gun-crosshair.png";
+const MUZZLE_FLASH_DURATION_SEC = 0.06;
 
 const VIEWMODEL_RENDERING_GROUP = 3;
 export const VIEWMODEL_LAYER_MASK = 0x10000000;
@@ -240,6 +248,33 @@ function createRifleReticle(scene: Scene): Mesh {
   return mesh;
 }
 
+function createMuzzleAnchor(
+  scene: Scene,
+  weaponRoot: TransformNode,
+  weapon: PrimaryWeaponId,
+): { anchor: TransformNode; flash: PointLight } {
+  weaponRoot.computeWorldMatrix(true);
+  const bounds = weaponRoot.getHierarchyBoundingVectors(true);
+  const size = bounds.max.subtract(bounds.min);
+  const center = bounds.min.add(bounds.max).scale(0.5);
+  const anchor = new TransformNode(`${weapon}MuzzleAnchor`, scene);
+  anchor.parent = weaponRoot;
+  anchor.position.set(
+    bounds.min.x - size.x * 0.04,
+    center.y + (weapon === "rifle" ? size.y * 0.08 : size.y * 0.03),
+    center.z,
+  );
+
+  const flash = new PointLight(`${weapon}MuzzleFlash`, Vector3.Zero(), scene);
+  flash.parent = anchor;
+  flash.diffuse = new Color3(0.33, 0.8, 1);
+  flash.specular = new Color3(0.55, 0.9, 1);
+  flash.intensity = 0;
+  flash.range = 12;
+  flash.includedOnlyMeshes = [];
+  return { anchor, flash };
+}
+
 function prepareViewMesh(mesh: Mesh) {
   mesh.isPickable = false;
   mesh.alwaysSelectAsActiveMesh = true;
@@ -295,6 +330,10 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
   const rifleReticleRoundOverlay = createRifleReticleRoundOverlay(scene, rifleReticle);
   const rifleReticleAnchor = new TransformNode("rifleReticleAnchor", scene);
   rifleReticleAnchor.parent = rifle;
+  const muzzleAnchors = {
+    rifle: createMuzzleAnchor(scene, rifle, "rifle"),
+    pistol: createMuzzleAnchor(scene, pistol, "pistol"),
+  };
 
   const rifleRoundDisplay = createWeaponRoundDisplay(
     scene,
@@ -335,10 +374,12 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
   let aimBlend = 0;
   let smoothParallaxY = 0;
   let smoothParallaxZ = 0;
+  let muzzleFlashTime = 0;
 
   const forward = new Vector3();
   const up = new Vector3();
   const right = new Vector3();
+  const muzzleCameraForward = new Vector3();
   const cameraEuler = new Vector3();
   const reticleSwayInverse = new Matrix();
   const reticleLocalMatrix = new Matrix();
@@ -358,6 +399,27 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
     root,
     shadowMeshes,
     setActiveWeapon,
+    flashMuzzle() {
+      const active = muzzleAnchors[activeWeapon];
+      active.flash.diffuse = new Color3(0.33, 0.8, 1);
+      active.flash.specular = new Color3(0.55, 0.9, 1);
+      active.flash.intensity = 5;
+      muzzleFlashTime = MUZZLE_FLASH_DURATION_SEC;
+    },
+    getMuzzleWorld(outPosition, outDirection, camera) {
+      const active = muzzleAnchors[activeWeapon];
+      root.computeWorldMatrix(true);
+      sway.computeWorldMatrix(true);
+      pivot.computeWorldMatrix(true);
+      active.anchor.computeWorldMatrix(true);
+      outPosition.copyFrom(active.anchor.getAbsolutePosition());
+      if (camera) {
+        camera.getDirectionToRef(Vector3.Forward(), muzzleCameraForward);
+        outDirection.copyFrom(muzzleCameraForward).normalize();
+        return;
+      }
+      outDirection.set(0, 0, 1);
+    },
     update(camera, options) {
       const {
         deltaSeconds,
@@ -375,6 +437,13 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
       root.setEnabled(visible);
       if (!visible || !camera.rotationQuaternion) {
         return;
+      }
+      if (muzzleFlashTime > 0) {
+        muzzleFlashTime = Math.max(0, muzzleFlashTime - deltaSeconds);
+        if (muzzleFlashTime <= 0) {
+          muzzleAnchors.rifle.flash.intensity = 0;
+          muzzleAnchors.pistol.flash.intensity = 0;
+        }
       }
 
       const clampedAimTarget = Math.min(Math.max(aimTarget, 0), 1);

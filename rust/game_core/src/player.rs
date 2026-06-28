@@ -1,4 +1,5 @@
 use crate::input::InputState;
+use crate::level_config::LevelPlayerSpawn;
 use crate::look::{
     apply_look_velocities, clamp_look_velocities, update_keyboard_look_velocity,
     update_mouse_look_velocity, LookInput, LookTuning, LookVelocity,
@@ -165,8 +166,35 @@ impl PlayerState {
 }
 
 impl PlayerState {
-    pub fn reset(&mut self) {
+    pub fn reset_to_spawn(&mut self, spawn: LevelPlayerSpawn) {
+        let look_tuning = self.look_tuning;
+        let invert_look_x = self.invert_look_x;
+        let invert_look_y = self.invert_look_y;
+        let walk_bob_enabled = self.walk_bob_enabled;
+        let walk_bob_amplitude_cm = self.walk_bob_amplitude_cm;
+        let walk_bob_duration_sec = self.walk_bob_duration_sec;
+
         *self = Self::default();
+        self.look_tuning = look_tuning;
+        self.invert_look_x = invert_look_x;
+        self.invert_look_y = invert_look_y;
+        self.walk_bob_enabled = walk_bob_enabled;
+        self.walk_bob_amplitude_cm = walk_bob_amplitude_cm;
+        self.walk_bob_duration_sec = walk_bob_duration_sec;
+        self.x = spawn.x;
+        self.z = spawn.z;
+        self.yaw = spawn.yaw;
+        self.eye_height = EYE_HEIGHT;
+        self.y = spawn.foot_y + self.eye_height;
+    }
+
+    pub fn reset(&mut self) {
+        self.reset_to_spawn(LevelPlayerSpawn {
+            x: SPAWN_X,
+            z: SPAWN_Z,
+            foot_y: 0.0,
+            yaw: SPAWN_YAW,
+        });
     }
 
     pub fn set_invert_look_x(&mut self, invert: bool) {
@@ -436,7 +464,7 @@ mod tests {
     fn mouse_horizontal_delta_changes_yaw() {
         let mut player = PlayerState::default();
         let input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         player.add_mouse_delta(10.0, 0.0);
         player.tick(&input, 1.0 / 60.0, &world);
@@ -448,7 +476,7 @@ mod tests {
     fn mouse_left_delta_pans_left() {
         let mut player = PlayerState::default();
         let input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         player.add_mouse_delta(-10.0, 0.0);
         player.tick(&input, 1.0 / 60.0, &world);
@@ -460,7 +488,7 @@ mod tests {
     fn mouse_vertical_delta_changes_pitch() {
         let mut player = PlayerState::default();
         let input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         player.add_mouse_delta(0.0, 10.0);
         player.tick(&input, 1.0 / 60.0, &world);
@@ -473,7 +501,7 @@ mod tests {
         let mut left = PlayerState::default();
         let mut right = PlayerState::default();
         let mut input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         input.look_left = true;
         for _ in 0..20 {
@@ -497,7 +525,7 @@ mod tests {
         };
         let mut input = InputState::default();
         input.look_right = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         for _ in 0..20 {
             player.tick(&input, 1.0 / 60.0, &world);
@@ -514,7 +542,7 @@ mod tests {
         };
         let mut input = InputState::default();
         input.look_up = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         for _ in 0..20 {
             player.tick(&input, 1.0 / 60.0, &world);
@@ -528,7 +556,7 @@ mod tests {
         let mut up = PlayerState::default();
         let mut down = PlayerState::default();
         let mut input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         input.look_up = true;
         for _ in 0..20 {
@@ -549,7 +577,7 @@ mod tests {
         let mut left = PlayerState::default();
         let mut right = PlayerState::default();
         let mut input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
         let start_x = left.x;
 
         input.left = true;
@@ -567,7 +595,7 @@ mod tests {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
         input.look_right = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         for _ in 0..20 {
             player.tick(&input, 1.0 / 60.0, &world);
@@ -581,7 +609,7 @@ mod tests {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
         input.forward = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         player.tick(&input, 1.0, &world);
 
@@ -593,7 +621,7 @@ mod tests {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
         input.forward = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         for _ in 0..30 {
             player.tick(&input, 1.0 / 60.0, &world);
@@ -612,7 +640,7 @@ mod tests {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
         input.forward = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         for _ in 0..30 {
             player.tick(&input, 1.0 / 60.0, &world);
@@ -634,7 +662,7 @@ mod tests {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
         input.forward = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         for _ in 0..40 {
             player.tick(&input, 1.0 / 60.0, &world);
@@ -655,7 +683,7 @@ mod tests {
     fn jump_reaches_configured_height() {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
         let start_y = player.y;
 
         input.jump = true;
@@ -675,7 +703,7 @@ mod tests {
     fn crouch_lowers_camera_with_ease_in_out() {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
         let stand_y = player.y;
 
         input.crouch = true;
@@ -714,7 +742,7 @@ mod tests {
         let mut player = PlayerState::default();
         let mut input = InputState::default();
         input.crouch = true;
-        let world = World::default();
+        let world = crate::level_config::square_arena_world();
 
         assert!((player.eye_height - EYE_HEIGHT).abs() < 0.001);
 

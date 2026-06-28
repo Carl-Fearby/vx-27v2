@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "id": "square-arena",
+    "name": "Square Arena",
+    "objective": "HOLD ZONE"
+  },
+  "size": 40,
+  "wallHeight": 4,
+  "wallThickness": 0.5,
+  "floorFootY": 0,
+  "floorSlabDepth": 0.35,
+  "playerSpawn": {
+    "x": 0,
+    "z": -8,
+    "footY": 0,
+    "yaw": 0
+  },
+  "floorHoles": [
+    {
+      "x": -8,
+      "z": 2,
+      "radius": 1.4
+    }
+  ],
+  "pillar": {
+    "x": 6,
+    "z": 2,
+    "height": 4,
+    "diameter": 2.4
+  },
+  "catwalk": {
+    "enabled": true,
+    "deckThickness": 0.22,
+    "overhangFraction": 0.35,
+    "railThickness": 0.07,
+    "railHeight": 0.9
+  },
+  "jumpBlocks": [
+    {
+      "id": "jumpBlockLow",
+      "centerX": -14,
+      "centerZ": -15.5,
+      "width": 2,
+      "depth": 2,
+      "height": 0.5
+    },
+    {
+      "id": "jumpBlockMid",
+      "centerX": -11.5,
+      "centerZ": -13,
+      "width": 2,
+      "depth": 2,
+      "height": 1
+    },
+    {
+      "id": "jumpBlockHigh",
+      "centerX": -9,
+      "centerZ": -10.5,
+      "width": 2.5,
+      "depth": 2.5,
+      "height": 1.5
+    }
+  ]
+}

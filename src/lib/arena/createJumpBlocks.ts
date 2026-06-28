@@ -1,6 +1,6 @@
-import { Color3, Mesh, MeshBuilder, PBRMaterial, Scene } from "@babylonjs/core";
-import { JUMP_BLOCKS, type JumpBlockSpec } from "@/lib/arena/walkableSurfaces";
+import type { LevelJumpBlock, LevelRuntime } from "@/lib/level/types";
 import { configureMaterialForOutdoorLighting } from "@/lib/lighting/configureOutdoorMeshMaterials";
+import { Color3, Mesh, MeshBuilder, PBRMaterial, Scene } from "@babylonjs/core";
 
 const JUMP_BLOCK_BLUE = new Color3(0.22, 0.48, 0.95);
 
@@ -17,7 +17,7 @@ function createJumpBlockMaterial(scene: Scene): PBRMaterial {
 function createJumpBlock(
   scene: Scene,
   material: PBRMaterial,
-  block: JumpBlockSpec,
+  block: LevelJumpBlock,
 ): Mesh {
   const mesh = MeshBuilder.CreateBox(
     block.id,
@@ -35,7 +35,17 @@ function createJumpBlock(
   return mesh;
 }
 
-export function createJumpBlocks(scene: Scene): Mesh[] {
+export function createJumpBlocks(
+  scene: Scene,
+  blocks: LevelJumpBlock[],
+): Mesh[] {
   const material = createJumpBlockMaterial(scene);
-  return JUMP_BLOCKS.map((block) => createJumpBlock(scene, material, block));
+  return blocks.map((block) => createJumpBlock(scene, material, block));
+}
+
+export function createJumpBlocksFromLevel(
+  scene: Scene,
+  level: LevelRuntime,
+): Mesh[] {
+  return createJumpBlocks(scene, level.jumpBlocks);
 }

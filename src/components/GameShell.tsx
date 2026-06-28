@@ -15,13 +15,18 @@ import { useSettings } from "@/hooks/useSettings";
 import { useRoundDisplayTuning } from "@/hooks/useRoundDisplayTuning";
 import { useViewWeaponTuning } from "@/hooks/useViewWeaponTuning";
 import { useWeaponHudState } from "@/hooks/useWeaponHudState";
+import type { LevelRuntime } from "@/lib/level/types";
 import { setMusicEnabled } from "@/lib/audio/music";
 import { eventMatchesBinding, formatBindingValue } from "@/lib/keyBindings";
 import type { SkyTuningPreviewMode } from "@/lib/lighting/createOutdoorSky";
 import { safeExitPointerLock } from "@/lib/pointerLock";
 import type { PlayerCoords } from "@/lib/playerCoords";
 
-export default function GameShell() {
+export default function GameShell({
+  levelRuntime,
+}: {
+  levelRuntime: LevelRuntime;
+}) {
   const { settings, updateSettings } = useSettings();
   const { bindings, updateBindings } = useKeyBindings();
   const {
@@ -179,11 +184,16 @@ export default function GameShell() {
         pointerLockBlocked={settingsOpen}
         materialEditMode={materialEditMode}
         activePrimaryWeapon={weaponHud.activePrimaryWeapon}
+        roundsInMag={weaponHud.roundsInMag}
+        activeLowAmmoThreshold={weaponHud.activeLowAmmoThreshold}
+        fireMode={weaponHud.fireMode}
+        levelRuntime={levelRuntime}
         surfaceTuning={surfaceTuning}
         onSurfacePick={setSelectedSurface}
         onToggleMaterialEditMode={toggleMaterialEditMode}
         onPlayerCoords={handlePlayerCoords}
         onAimBlend={handleAimBlend}
+        onTryFirePrimary={weaponHud.tryFirePrimary}
         onReady={() => setSceneReady(true)}
         skyPreviewModeRef={skyPreviewModeRef}
       />
@@ -191,8 +201,8 @@ export default function GameShell() {
         visible={hudVisible && sceneReady}
         getYaw={getYaw}
         onOpenSettings={openSettings}
-        levelName="Square Arena"
-        objective="HOLD ZONE"
+        levelName={levelRuntime.meta.name}
+        objective={levelRuntime.meta.objective}
         hostileCount={0}
         missionSeconds={missionSeconds}
         activePrimaryWeapon={weaponHud.activePrimaryWeapon}
