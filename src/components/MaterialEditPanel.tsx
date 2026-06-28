@@ -7,6 +7,11 @@ import type {
   EditableSurfaceId,
   SurfaceMaterialTuning,
 } from "@/lib/materialEdit/types";
+import {
+  clampNumber,
+  defaultButtonStep,
+  steppedValue,
+} from "@/lib/ui/numericStep";
 
 function TuningSlider({
   label,
@@ -14,6 +19,7 @@ function TuningSlider({
   min,
   max,
   step,
+  buttonStep,
   value,
   suffix = "",
   decimals = 2,
@@ -24,33 +30,55 @@ function TuningSlider({
   min: number;
   max: number;
   step: number;
+  buttonStep?: number;
   value: number;
   suffix?: string;
   decimals?: number;
   onChange: (value: number) => void;
 }) {
+  const safeValue = Number.isFinite(value) ? value : min;
+  const nudgeStep = buttonStep ?? defaultButtonStep(step);
+
   return (
-    <label className="settings-row settings-row--slider">
+    <div className="settings-row settings-row--slider">
       <span className="settings-row-copy">
         <span className="settings-row-label">
           {label}{" "}
           <output>
-            {value.toFixed(decimals)}
+            {safeValue.toFixed(decimals)}
             {suffix}
           </output>
         </span>
         <span className="settings-row-hint">{hint}</span>
       </span>
-      <input
-        type="range"
-        className="settings-slider"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
+      <div className="settings-slider-stepper">
+        <button
+          type="button"
+          className="settings-stepper-btn"
+          aria-label={`Decrease ${label}`}
+          onClick={() => onChange(steppedValue(safeValue, nudgeStep, -1, min, max))}
+        >
+          -
+        </button>
+        <input
+          type="range"
+          className="settings-slider"
+          min={min}
+          max={max}
+          step={step}
+          value={clampNumber(safeValue, min, max)}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+        <button
+          type="button"
+          className="settings-stepper-btn"
+          aria-label={`Increase ${label}`}
+          onClick={() => onChange(steppedValue(safeValue, nudgeStep, 1, min, max))}
+        >
+          +
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -9,7 +9,6 @@ pub struct FloorHole {
 
 pub const HOLE_FALL_GRAVITY: f32 = 20.0;
 pub const HOLE_FALL_REMOVE_DEPTH: f32 = 12.0;
-pub const FLOOR_FOOT_Y: f32 = 0.0;
 pub const DEATH_FALL_DROP: f32 = 12.0;
 
 pub fn point_in_floor_hole(x: f32, z: f32, holes: &[FloorHole], inset: f32) -> bool {

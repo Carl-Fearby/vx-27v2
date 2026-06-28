@@ -9,6 +9,7 @@ import SkyTuningSection from "@/components/SkyTuningSection";
 import TorchTuningSection from "@/components/TorchTuningSection";
 import RoundDisplayTuningSection from "@/components/RoundDisplayTuningSection";
 import ViewWeaponTuningSection from "@/components/ViewWeaponTuningSection";
+import RecoilTuningSection from "@/components/RecoilTuningSection";
 import type { KeyBindingsMap } from "@/lib/keyBindings";
 import type { HudWeaponTuning } from "@/lib/hud/hudWeaponTuning";
 import type { PrimaryWeaponId } from "@/lib/hud/weaponHud";
@@ -31,6 +32,7 @@ import {
   formatPlayerCoordsJson,
   type PlayerCoords,
 } from "@/lib/playerCoords";
+import type { RecoilTuning } from "@/lib/player/recoilTuning";
 
 type SettingsMenuProps = {
   open: boolean;
@@ -68,6 +70,9 @@ type SettingsMenuProps = {
   onRoundDisplayPreviewChange?: (
     preview: { weapon: PrimaryWeaponId; mode: RoundDisplayPoseMode } | null,
   ) => void;
+  recoilTuning?: RecoilTuning;
+  onRecoilTuningChange?: (patch: Partial<RecoilTuning>) => void;
+  onRecoilTuningReset?: () => void;
   playerCoords?: PlayerCoords | null;
   getPlayerCoords?: () => PlayerCoords | null;
   onSectionActiveChange?: (active: boolean) => void;
@@ -87,6 +92,7 @@ type SectionId =
   | "hud-weapon"
   | "view-weapon"
   | "ammo-display"
+  | "recoil"
   | "development"
   | "player-position"
   | "local-storage"
@@ -166,6 +172,12 @@ const AMMO_DISPLAY_SECTION: SectionConfig = {
   id: "ammo-display",
   title: "Ammo display tuning",
   description: "Gun-mounted round counter placement",
+};
+
+const RECOIL_SECTION: SectionConfig = {
+  id: "recoil",
+  title: "Recoil tuning",
+  description: "Camera kick and weapon spring response",
 };
 
 const DEVELOPMENT_SECTION: SectionConfig = {
@@ -713,6 +725,9 @@ export default function SettingsMenu({
   onRoundDisplayTuningChange,
   onRoundDisplayTuningReset,
   onRoundDisplayPreviewChange,
+  recoilTuning,
+  onRecoilTuningChange,
+  onRecoilTuningReset,
   playerCoords,
   getPlayerCoords,
   onSectionActiveChange,
@@ -741,6 +756,9 @@ export default function SettingsMenu({
       onRoundDisplayTuningReset &&
       onRoundDisplayPreviewChange,
   );
+  const hasRecoil = Boolean(
+    recoilTuning && onRecoilTuningChange && onRecoilTuningReset,
+  );
 
   const topSections = [
     AUDIO_SECTION,
@@ -768,6 +786,7 @@ export default function SettingsMenu({
     ...(hasHudWeapon ? [HUD_WEAPON_SECTION] : []),
     ...(hasViewWeapon ? [VIEW_WEAPON_SECTION] : []),
     ...(hasRoundDisplay ? [AMMO_DISPLAY_SECTION] : []),
+    ...(hasRecoil ? [RECOIL_SECTION] : []),
     ...(hasDebug ? [DEBUG_SECTION] : []),
   ];
 
@@ -919,6 +938,16 @@ export default function SettingsMenu({
             onChange={onRoundDisplayTuningChange}
             onReset={onRoundDisplayTuningReset}
             onPreviewChange={onRoundDisplayPreviewChange}
+          />
+        ) : null;
+      case "recoil":
+        return recoilTuning &&
+          onRecoilTuningChange &&
+          onRecoilTuningReset ? (
+          <RecoilTuningSection
+            tuning={recoilTuning}
+            onChange={onRecoilTuningChange}
+            onReset={onRecoilTuningReset}
           />
         ) : null;
       case "debug":

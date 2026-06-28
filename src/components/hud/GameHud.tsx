@@ -37,6 +37,7 @@ type GameHudProps = {
   objective?: string;
   hostileCount?: number;
   missionSeconds?: number;
+  score?: number;
   activePrimaryWeapon?: PrimaryWeaponId;
   aimBlend?: number;
   selectedWeaponSlot?: number;
@@ -70,6 +71,7 @@ export default function GameHud({
   objective = "HOLD ZONE",
   hostileCount = 0,
   missionSeconds = 0,
+  score = 0,
   activePrimaryWeapon = "rifle",
   aimBlend = 0,
   selectedWeaponSlot = GRENADE_WEAPON_SLOT,
@@ -284,7 +286,7 @@ export default function GameHud({
 
       <div className="hud-score-panel" role="status" aria-label="Combat score">
         <span className="hud-score-label">SCORE</span>
-        <strong className="hud-score-value">0</strong>
+        <strong className="hud-score-value">{score}</strong>
       </div>
 
       <div className="hudMissionInfo" role="status" aria-label="Mission status">

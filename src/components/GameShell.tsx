@@ -13,6 +13,7 @@ import { useMaterialEdit } from "@/hooks/useMaterialEdit";
 import { useOutdoorLightingTuning } from "@/hooks/useOutdoorLightingTuning";
 import { useSettings } from "@/hooks/useSettings";
 import { useRoundDisplayTuning } from "@/hooks/useRoundDisplayTuning";
+import { useRecoilTuning } from "@/hooks/useRecoilTuning";
 import { useViewWeaponTuning } from "@/hooks/useViewWeaponTuning";
 import { useWeaponHudState } from "@/hooks/useWeaponHudState";
 import type { LevelRuntime } from "@/lib/level/types";
@@ -57,6 +58,11 @@ export default function GameShell({
     updatePose: updateRoundDisplayPose,
     resetTuning: resetRoundDisplayTuning,
   } = useRoundDisplayTuning();
+  const {
+    tuning: recoilTuning,
+    updateTuning: updateRecoilTuning,
+    resetTuning: resetRecoilTuning,
+  } = useRecoilTuning();
   const [roundDisplayPreview, setRoundDisplayPreview] = useState<
     { weapon: "rifle" | "pistol"; mode: "hip" | "ads" } | null
   >(null);
@@ -162,6 +168,7 @@ export default function GameShell({
   }, [scenePaused]);
 
   const getYaw = useCallback(() => playerCoordsRef.current.yaw, []);
+  const score = 0;
 
   const hudVisible = settings.hudVisible && !materialEditMode;
   const weaponHud = useWeaponHudState({
@@ -179,6 +186,7 @@ export default function GameShell({
         motionBlurTuning={motionBlurTuning}
         viewWeaponTuning={viewWeaponTuning}
         roundDisplayTuning={roundDisplayTuning}
+        recoilTuning={recoilTuning}
         roundDisplayPreview={roundDisplayPreview}
         paused={scenePaused}
         pointerLockBlocked={settingsOpen}
@@ -205,6 +213,7 @@ export default function GameShell({
         objective={levelRuntime.meta.objective}
         hostileCount={0}
         missionSeconds={missionSeconds}
+        score={score}
         activePrimaryWeapon={weaponHud.activePrimaryWeapon}
         aimBlend={aimBlend}
         selectedWeaponSlot={weaponHud.selectedWeaponSlot}
@@ -266,6 +275,9 @@ export default function GameShell({
         onRoundDisplayTuningChange={updateRoundDisplayPose}
         onRoundDisplayTuningReset={resetRoundDisplayTuning}
         onRoundDisplayPreviewChange={setRoundDisplayPreview}
+        recoilTuning={recoilTuning}
+        onRecoilTuningChange={updateRecoilTuning}
+        onRecoilTuningReset={resetRecoilTuning}
         getPlayerCoords={getPlayerCoords}
         onSectionActiveChange={setSettingsSectionActive}
         bindings={bindings}

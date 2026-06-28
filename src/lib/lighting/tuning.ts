@@ -23,7 +23,10 @@ export const MOON_COLOR = { r: 184 / 255, g: 200 / 255, b: 240 / 255 };
 export const DEFAULT_HEMI_DAY = { temperature: 13000, intensity: 0.27 };
 export const DEFAULT_HEMI_NIGHT = { temperature: 0, intensity: 0 };
 
-export const DAY_CLEAR_COLOR = { r: 0.72, g: 0.85, b: 0.94 };
+/** Transparent canvas; sky dome fills the backdrop (no solid blue wash). */
+export const DAY_CLEAR_COLOR = { r: 0, g: 0, b: 0 };
+/** Distant atmospheric haze — decoupled from canvas clear colour. */
+export const DAY_FOG_COLOR = { r: 0.72, g: 0.85, b: 0.94 };
 export const NIGHT_CLEAR_COLOR = { r: 0.024, g: 0.039, b: 0.078 };
 export const DAY_FOG_NEAR = 45;
 export const DAY_FOG_FAR = 95;

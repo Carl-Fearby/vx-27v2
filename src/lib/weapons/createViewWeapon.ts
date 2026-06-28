@@ -12,9 +12,8 @@ import {
   TransformNode,
   Vector3,
 } from "@babylonjs/core";
-import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
-import "@babylonjs/loaders/glTF";
 import { GE2_PLAYER_WEAPON_MODELS } from "@/lib/assets/ge2ImportedAssets";
+import { loadGltfModel } from "@/lib/assets/loadGltfModel";
 import type { PrimaryWeaponId } from "@/lib/hud/weaponHud";
 import type {
   ViewWeaponPose,
@@ -29,6 +28,11 @@ import {
   type RoundDisplayPoseMode,
   type RoundDisplayTuning,
 } from "@/lib/weapons/weaponRoundDisplayTuning";
+import {
+  DEFAULT_RECOIL_TUNING,
+  resolveAdsRecoilScale,
+  type RecoilTuning,
+} from "@/lib/player/recoilTuning";
 
 export type RoundDisplayPreview = {
   weapon: PrimaryWeaponId;
@@ -47,6 +51,7 @@ export type ViewWeaponUpdateOptions = {
   roundDisplayLow?: boolean;
   roundDisplayHp?: number;
   roundDisplayStamina?: number;
+  recoilTuning?: RecoilTuning;
 };
 
 export type ViewWeapon = {
@@ -54,6 +59,7 @@ export type ViewWeapon = {
   shadowMeshes: Mesh[];
   setActiveWeapon: (weapon: PrimaryWeaponId) => void;
   flashMuzzle: () => void;
+  applyFireKick: (aimBlend?: number, tuning?: RecoilTuning) => void;
   getMuzzleWorld: (
     outPosition: Vector3,
     outDirection: Vector3,
@@ -288,25 +294,18 @@ async function loadWeaponModel(
   weapon: PrimaryWeaponId,
   shadowMeshes: Mesh[],
 ): Promise<TransformNode> {
-  const result = await SceneLoader.ImportMeshAsync(
-    "",
-    GE2_PLAYER_WEAPON_MODELS[weapon],
-    "",
+  const { root, meshes } = await loadGltfModel(
     scene,
+    GE2_PLAYER_WEAPON_MODELS[weapon],
+    `viewWeapon_${weapon}`,
   );
-  const root = new TransformNode(`viewWeapon_${weapon}`, scene);
-  for (const mesh of result.meshes) {
-    if (mesh === result.meshes[0]) {
-      continue;
-    }
-    mesh.parent = root;
+  for (const mesh of meshes) {
     if (mesh instanceof Mesh) {
       prepareViewMesh(mesh);
       shadowMeshes.push(mesh);
     }
   }
   fitModel(root, weapon);
-  root.scaling.x *= -1;
   root.setEnabled(false);
   return root;
 }
@@ -375,6 +374,11 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
   let smoothParallaxY = 0;
   let smoothParallaxZ = 0;
   let muzzleFlashTime = 0;
+  let fireRecoilBack = 0;
+  let fireRecoilBackVel = 0;
+  let fireRecoilPitch = 0;
+  let fireRecoilPitchVel = 0;
+  let activeRecoilTuning = DEFAULT_RECOIL_TUNING;
 
   const forward = new Vector3();
   const up = new Vector3();
@@ -406,6 +410,14 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
       active.flash.intensity = 5;
       muzzleFlashTime = MUZZLE_FLASH_DURATION_SEC;
     },
+    applyFireKick(nextAimBlend = aimBlend, tuning = activeRecoilTuning) {
+      activeRecoilTuning = tuning;
+      const recoilScale = resolveAdsRecoilScale(nextAimBlend);
+      const backKick = tuning.fireRecoilBack * recoilScale;
+      fireRecoilBackVel += backKick * tuning.fireRecoilKickVelScale;
+      fireRecoilPitchVel +=
+        backKick * tuning.fireRecoilPitch * tuning.fireRecoilPitchVelScale;
+    },
     getMuzzleWorld(outPosition, outDirection, camera) {
       const active = muzzleAnchors[activeWeapon];
       root.computeWorldMatrix(true);
@@ -433,7 +445,9 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
         roundDisplayStamina = 1,
         roundDisplayTuning,
         roundDisplayPreview = null,
+        recoilTuning = activeRecoilTuning,
       } = options;
+      activeRecoilTuning = recoilTuning;
       root.setEnabled(visible);
       if (!visible || !camera.rotationQuaternion) {
         return;
@@ -550,6 +564,24 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
       );
       swayPosY = spring.value;
       swayPosYVel = spring.velocity;
+      spring = springStep(
+        fireRecoilBack,
+        fireRecoilBackVel,
+        activeRecoilTuning.fireRecoilStiffness,
+        activeRecoilTuning.fireRecoilDamping,
+        deltaSeconds,
+      );
+      fireRecoilBack = spring.value;
+      fireRecoilBackVel = spring.velocity;
+      spring = springStep(
+        fireRecoilPitch,
+        fireRecoilPitchVel,
+        activeRecoilTuning.fireRecoilStiffness,
+        activeRecoilTuning.fireRecoilDamping,
+        deltaSeconds,
+      );
+      fireRecoilPitch = spring.value;
+      fireRecoilPitchVel = spring.velocity;
 
       const activityTarget = moveSpeed > IDLE_STILL_SPEED ? 1 : 0;
       bobActivity +=
@@ -617,6 +649,9 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
         .addInPlace(right.scale(pose.posX))
         .addInPlace(up.scale(pose.posY))
         .addInPlace(forward.scale(-pose.posZ));
+      if (Math.abs(fireRecoilBack) > 0.00005) {
+        root.position.addInPlace(forward.scale(-fireRecoilBack));
+      }
 
       const appliedParallaxY = smoothParallaxY * hipParallax;
       const appliedParallaxZ = smoothParallaxZ * hipParallax;
@@ -632,7 +667,11 @@ export async function createViewWeapon(scene: Scene): Promise<ViewWeapon> {
       pivot.rotation.set(pose.rotX, pose.rotY + Math.PI, pose.rotZ);
       pivot.scaling.setAll(pose.scale);
       sway.rotation.set(
-        swayPitch * swayScale + smoothBobRoll * bobSteady + idleRoll + idlePitch,
+        swayPitch * swayScale +
+          smoothBobRoll * bobSteady +
+          idleRoll +
+          idlePitch +
+          fireRecoilPitch * swayScale,
         swayYaw * swayScale,
         0,
       );

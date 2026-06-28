@@ -1,0 +1,46 @@
+[
+  {
+    "id": "assets-ammo-crate",
+    "name": "Ammo Crate",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/ammo-crate.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "ammo-crate",
+    "savedAt": "2026-06-28T19:13:32.140Z"
+  },
+  {
+    "id": "assets-grenade",
+    "name": "Grenade",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/grenade.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "grenade",
+    "savedAt": "2026-06-28T21:55:32.693Z"
+  },
+  {
+    "id": "assets-oil-barrel",
+    "name": "Oil Barrel",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/oil-barrel.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "oil-barrel",
+    "savedAt": "2026-06-28T22:31:51.080Z"
+  },
+  {
+    "id": "assets-score-token",
+    "name": "Score Token",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/score-token.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "score-token",
+    "savedAt": "2026-06-28T23:44:26.508Z"
+  }
+]

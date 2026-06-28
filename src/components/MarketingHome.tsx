@@ -17,9 +17,14 @@ export default function MarketingHome() {
           Tactical sci-fi FPS prototype with Babylon.js rendering, Rust-powered
           game logic, and a growing industrial arena.
         </p>
-        <Link href="/game" className="marketing-play-link">
-          Play
-        </Link>
+        <div className="marketing-actions">
+          <Link href="/game" className="marketing-play-link">
+            Play
+          </Link>
+          <Link href="/object-editor" className="marketing-play-link marketing-play-link--secondary">
+            Object Editor
+          </Link>
+        </div>
       </section>
     </main>
   );

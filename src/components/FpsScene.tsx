@@ -90,6 +90,11 @@ import type { MotionBlurTuning } from "@/lib/postProcess/motionBlurTuning";
 import type { GameSettings } from "@/lib/settings";
 import type { PrimaryWeaponId } from "@/lib/hud/weaponHud";
 import type { FireMode } from "@/lib/weapons/primaryWeapons";
+import {
+  DEFAULT_RECOIL_TUNING,
+  resolveAdsRecoilScale,
+  type RecoilTuning,
+} from "@/lib/player/recoilTuning";
 import type { ViewWeaponTuning } from "@/lib/weapons/viewWeaponTuning";
 import type {
   RoundDisplayPoseMode,
@@ -130,6 +135,7 @@ type FpsSceneProps = Pick<
   motionBlurTuning: MotionBlurTuning;
   viewWeaponTuning: ViewWeaponTuning;
   roundDisplayTuning: RoundDisplayTuning;
+  recoilTuning: RecoilTuning;
   roundDisplayPreview?: { weapon: PrimaryWeaponId; mode: RoundDisplayPoseMode } | null;
   paused: boolean;
   pointerLockBlocked: boolean;
@@ -292,6 +298,22 @@ function updateFlyPosition(
   flyPosition.addInPlace(scratch.move);
 }
 
+function springRecoilStep(
+  value: number,
+  velocity: number,
+  target: number,
+  stiffness: number,
+  damping: number,
+  dt: number,
+): { value: number; velocity: number } {
+  const nextVelocity =
+    velocity + ((target - value) * stiffness - velocity * damping) * dt;
+  return {
+    value: value + nextVelocity * dt,
+    velocity: nextVelocity,
+  };
+}
+
 /** Sky/celestial = 0, arena geometry = 1 so walls paint over sun billboards. */
 const WORLD_RENDERING_GROUP = 1;
 
@@ -311,6 +333,7 @@ export default function FpsScene(props: FpsSceneProps) {
   const motionBlurTuningRef = useRef(props.motionBlurTuning);
   const viewWeaponTuningRef = useRef(props.viewWeaponTuning);
   const roundDisplayTuningRef = useRef(props.roundDisplayTuning);
+  const recoilTuningRef = useRef(props.recoilTuning);
   const roundDisplayPreviewRef = useRef(props.roundDisplayPreview ?? null);
   const pausedRef = useRef(props.paused);
   const pointerLockBlockedRef = useRef(props.pointerLockBlocked);
@@ -365,6 +388,7 @@ export default function FpsScene(props: FpsSceneProps) {
     motionBlurTuningRef.current = props.motionBlurTuning;
     viewWeaponTuningRef.current = props.viewWeaponTuning;
     roundDisplayTuningRef.current = props.roundDisplayTuning;
+    recoilTuningRef.current = props.recoilTuning;
     roundDisplayPreviewRef.current = props.roundDisplayPreview ?? null;
     pausedRef.current = props.paused;
     pointerLockBlockedRef.current = props.pointerLockBlocked;
@@ -502,7 +526,7 @@ export default function FpsScene(props: FpsSceneProps) {
 
       scene = new Scene(engine);
       scene.collisionsEnabled = true;
-      scene.clearColor = new Color4(0.72, 0.85, 0.94, 1);
+      scene.clearColor = new Color4(0, 0, 0, 0);
       scene.imageProcessingConfiguration.toneMappingEnabled = true;
       scene.imageProcessingConfiguration.toneMappingType =
         ImageProcessingConfiguration.TONEMAPPING_ACES;
@@ -962,6 +986,12 @@ export default function FpsScene(props: FpsSceneProps) {
       const weaponPreviousPosition = camera.position.clone();
       const shotMuzzlePosition = new Vector3();
       const shotDirection = new Vector3();
+      let recoilPitch = 0;
+      let recoilPitchVel = 0;
+      let recoilPitchTarget = 0;
+      let recoilYaw = 0;
+      let recoilYawVel = 0;
+      let recoilYawTarget = 0;
       let footstepPhase = 0;
       let footstepActivity = 0;
       let previousFootstepX = gameCore.position_x();
@@ -1012,6 +1042,27 @@ export default function FpsScene(props: FpsSceneProps) {
         const deltaSeconds = engine!.getDeltaTime() / 1000;
         autoFireCooldown = Math.max(0, autoFireCooldown - deltaSeconds);
         burstCooldown = Math.max(0, burstCooldown - deltaSeconds);
+        const recoilTuning = recoilTuningRef.current ?? DEFAULT_RECOIL_TUNING;
+        let recoilSpring = springRecoilStep(
+          recoilPitch,
+          recoilPitchVel,
+          recoilPitchTarget,
+          recoilTuning.springStiffness,
+          recoilTuning.springDamping,
+          deltaSeconds,
+        );
+        recoilPitch = recoilSpring.value;
+        recoilPitchVel = recoilSpring.velocity;
+        recoilSpring = springRecoilStep(
+          recoilYaw,
+          recoilYawVel,
+          recoilYawTarget,
+          recoilTuning.springStiffness,
+          recoilTuning.springDamping,
+          deltaSeconds,
+        );
+        recoilYaw = recoilSpring.value;
+        recoilYawVel = recoilSpring.velocity;
         const previousFootstepPhase = footstepPhase;
         let horizontalFootstepSpeed = 0;
         const flyModeRequested =
@@ -1045,8 +1096,8 @@ export default function FpsScene(props: FpsSceneProps) {
             syncFlyLookInput(gameCore, bindingsRef.current, pressedCodes);
             gameCore.tick(deltaSeconds);
             camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
-              gameCore.yaw(),
-              -gameCore.pitch(),
+              gameCore.yaw() + recoilYaw,
+              -(gameCore.pitch() + recoilPitch),
               0,
             );
             updateFlyPosition(
@@ -1232,8 +1283,8 @@ export default function FpsScene(props: FpsSceneProps) {
         if (flyModeActive) {
           camera.position.copyFrom(flyPosition);
           camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
-            gameCore.yaw(),
-            -gameCore.pitch(),
+            gameCore.yaw() + recoilYaw,
+            -(gameCore.pitch() + recoilPitch),
             0,
           );
         } else {
@@ -1244,8 +1295,12 @@ export default function FpsScene(props: FpsSceneProps) {
           camera.position.z = gameCore.position_z();
           // Yaw-pitch-roll (YXZ) — same as GE2; separate Euler axes skew roll when looking around.
           camera.rotationQuaternion = Quaternion.RotationYawPitchRoll(
-            gameCore.yaw(),
-            -(gameCore.pitch() + gameCore.walk_bob_pitch() * walkBobScale),
+            gameCore.yaw() + recoilYaw,
+            -(
+              gameCore.pitch() +
+              gameCore.walk_bob_pitch() * walkBobScale +
+              recoilPitch
+            ),
             gameCore.walk_bob_roll() * walkBobScale,
           );
         }
@@ -1288,6 +1343,7 @@ export default function FpsScene(props: FpsSceneProps) {
           roundDisplayPreview: roundDisplayPreviewRef.current,
           roundCount: roundsInMagRef.current,
           roundDisplayLow: roundsInMagRef.current <= activeLowAmmoThresholdRef.current,
+          recoilTuning,
           visible: !deathVisibleRef.current && !materialEditModeRef.current,
         });
         if (viewWeapon) {
@@ -1333,7 +1389,22 @@ export default function FpsScene(props: FpsSceneProps) {
             burstShotsRemaining = 0;
             break;
           }
+          const recoilScale = resolveAdsRecoilScale(aimFovBlend);
+          const pitchTargetDelta =
+            recoilTuning.aimRecoilPitch *
+            recoilScale *
+            (0.85 + Math.random() * 0.3);
+          const yawTargetDelta =
+            (Math.random() - 0.5) *
+            2 *
+            recoilTuning.aimRecoilYaw *
+            recoilScale;
+          recoilPitchTarget += pitchTargetDelta;
+          recoilYawTarget += yawTargetDelta;
+          recoilPitchVel += pitchTargetDelta * recoilTuning.kickVelScale;
+          recoilYawVel += yawTargetDelta * recoilTuning.kickVelScale;
           viewWeapon?.flashMuzzle();
+          viewWeapon?.applyFireKick(aimFovBlend, recoilTuning);
           viewWeapon?.getMuzzleWorld(shotMuzzlePosition, shotDirection, camera);
           laserTracers?.spawn(shotMuzzlePosition, shotDirection, BULLET_MAX_RANGE);
           sounds?.playShot();

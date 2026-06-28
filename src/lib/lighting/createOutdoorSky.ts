@@ -31,6 +31,7 @@ import {
 import {
   computeSkyNightBlend,
   DAY_CLEAR_COLOR,
+  DAY_FOG_COLOR,
   DAY_FOG_FAR,
   DAY_FOG_NEAR,
   DAY_NIGHT_FADE_DURATION,
@@ -487,11 +488,12 @@ export async function createOutdoorSky(
 
   const applyAtmosphere = (nightness: number, skyBlend: number) => {
     const clear = lerpColor(DAY_CLEAR_COLOR, NIGHT_CLEAR_COLOR, nightness);
-    scene.clearColor = new Color4(clear.r, clear.g, clear.b, 1);
+    const fog = lerpColor(DAY_FOG_COLOR, NIGHT_CLEAR_COLOR, nightness);
+    scene.clearColor = new Color4(clear.r, clear.g, clear.b, 0);
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogStart = lerp(DAY_FOG_NEAR, NIGHT_FOG_NEAR, nightness);
     scene.fogEnd = lerp(DAY_FOG_FAR, NIGHT_FOG_FAR, nightness);
-    scene.fogColor = new Color3(clear.r, clear.g, clear.b);
+    scene.fogColor = new Color3(fog.r, fog.g, fog.b);
     skyMaterial.setFloat("uNightBlend", skyBlend);
     scene.imageProcessingConfiguration.exposure = lerp(
       DAY_TONE_EXPOSURE,

@@ -3,6 +3,7 @@ use crate::world::World;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LevelMeta {
     pub id: String,
     pub name: String,
@@ -26,6 +27,7 @@ pub struct LevelFloorHole {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LevelPillar {
     pub x: f32,
     pub z: f32,
@@ -34,6 +36,7 @@ pub struct LevelPillar {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LevelCatwalk {
     pub enabled: bool,
     #[serde(rename = "deckThickness")]
@@ -47,6 +50,7 @@ pub struct LevelCatwalk {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LevelJumpBlock {
     pub id: String,
     #[serde(rename = "centerX")]
@@ -59,6 +63,7 @@ pub struct LevelJumpBlock {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LevelConfig {
     pub meta: LevelMeta,
     pub size: f32,
