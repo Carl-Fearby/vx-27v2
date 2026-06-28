@@ -28,6 +28,9 @@ export type HudBottomBarLayout = {
   magsX: number;
   magsY: number;
   labelY: number;
+  fireCarouselX: number;
+  fireCarouselY: number;
+  fireCarouselScale: number;
 };
 
 export const DEFAULT_HUD_BAR_LAYOUT: HudBarLayout = {
@@ -60,4 +63,7 @@ export const DEFAULT_HUD_BOTTOM_BAR_LAYOUT: HudBottomBarLayout = {
   magsX: 67,
   magsY: 10,
   labelY: 8,
+  fireCarouselX: 92,
+  fireCarouselY: 25,
+  fireCarouselScale: 2.5,
 };

@@ -6,7 +6,12 @@ import {
   type StackTuneStep,
 } from "@/lib/hud/weaponStackLayout";
 
-export type PrimaryWeaponId = "rifle" | "pistol";
+import {
+  PRIMARY_WEAPON_CONFIG,
+  type PrimaryWeaponId,
+} from "@/lib/weapons/primaryWeapons";
+
+export type { PrimaryWeaponId } from "@/lib/weapons/primaryWeapons";
 
 export const PRIMARY_SLOT_KEYS = ["V", "B"] as const;
 export const RIFLE_PRIMARY_SLOT = "V";
@@ -16,8 +21,14 @@ export const PRIMARY_WEAPONS: Record<
   PrimaryWeaponId,
   { id: PrimaryWeaponId; label: string }
 > = {
-  rifle: { id: "rifle", label: "RIFLE" },
-  pistol: { id: "pistol", label: "PISTOL" },
+  rifle: {
+    id: PRIMARY_WEAPON_CONFIG.rifle.id,
+    label: PRIMARY_WEAPON_CONFIG.rifle.label,
+  },
+  pistol: {
+    id: PRIMARY_WEAPON_CONFIG.pistol.id,
+    label: PRIMARY_WEAPON_CONFIG.pistol.label,
+  },
 };
 
 export const PRIMARY_SLOT_UI: Record<

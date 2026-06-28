@@ -12,6 +12,10 @@ export const PLAYER_COLLISION_RADIUS = 0.4;
 /** Babylon ellipsoid half-height on the collision probe / camera. */
 export const PLAYER_COLLISION_HALF_HEIGHT = 0.9;
 
+/** Renders after arena geometry (1), before viewmodel (3). */
+export const DEBUG_OVERLAY_RENDERING_GROUP = 2;
+const WORLD_LAYER_MASK = 0x0fffffff;
+
 const FOOTPRINT_LIFT = 0.025;
 
 export type PlayerCollisionFootprintDebug = {
@@ -33,12 +37,15 @@ export function createPlayerCollisionFootprintDebug(
   mesh.checkCollisions = false;
   mesh.receiveShadows = false;
   mesh.isVisible = false;
+  mesh.renderingGroupId = DEBUG_OVERLAY_RENDERING_GROUP;
+  mesh.layerMask = WORLD_LAYER_MASK;
 
   const material = new StandardMaterial("playerCollisionFootprintMat", scene);
   material.disableLighting = true;
   material.backFaceCulling = false;
-  material.alpha = 0.5;
-  material.zOffset = -2;
+  material.disableDepthWrite = true;
+  material.alpha = 0.55;
+  material.zOffset = -4;
   mesh.material = material;
 
   const idleColor = new Color3(0.15, 0.82, 1);

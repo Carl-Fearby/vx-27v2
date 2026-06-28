@@ -21,12 +21,11 @@ function createCatwalkBox(
   centerX: number,
   centerY: number,
   centerZ: number,
-  walkable = false,
 ): Mesh {
   const mesh = MeshBuilder.CreateBox(name, { width, height, depth }, scene);
   mesh.position.set(centerX, centerY, centerZ);
   mesh.material = material;
-  mesh.checkCollisions = walkable;
+  mesh.checkCollisions = false;
   mesh.receiveShadows = true;
   return mesh;
 }
@@ -62,7 +61,6 @@ export function createEastWallCatwalk(
     deckCenterX,
     deckCenterY,
     deckCenterZ,
-    true,
   );
 
   const railWest = createCatwalkBox(

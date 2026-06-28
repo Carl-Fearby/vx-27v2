@@ -14,7 +14,8 @@ export type BindingAction =
   | "lookUp"
   | "lookDown"
   | "lookLeft"
-  | "lookRight";
+  | "lookRight"
+  | "cycleFireMode";
 
 export type KeyBindingsMap = Record<BindingAction, string | string[]>;
 
@@ -37,6 +38,7 @@ export const DEFAULT_BINDINGS: KeyBindingsMap = {
   lookDown: "ArrowDown",
   lookLeft: "ArrowLeft",
   lookRight: "ArrowRight",
+  cycleFireMode: "KeyC",
 };
 
 export const BINDING_ROWS: Array<{ id: BindingAction; label: string }> = [
@@ -56,6 +58,7 @@ export const BINDING_ROWS: Array<{ id: BindingAction; label: string }> = [
   { id: "lookDown", label: "Look down" },
   { id: "lookLeft", label: "Look left" },
   { id: "lookRight", label: "Look right" },
+  { id: "cycleFireMode", label: "Cycle fire mode" },
 ];
 
 const CODE_LABELS: Record<string, string> = {
@@ -67,6 +70,7 @@ const CODE_LABELS: Record<string, string> = {
   KeyE: "E",
   KeyF: "F",
   KeyN: "N",
+  KeyC: "C",
   Space: "Space",
   Escape: "Esc",
   ShiftLeft: "Shift",

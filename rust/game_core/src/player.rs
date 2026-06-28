@@ -389,8 +389,23 @@ impl PlayerState {
         }
 
         let horizontal_speed = move_len * speed;
+        let prev_x = self.x;
+        let prev_z = self.z;
         self.x += move_x * speed * delta_seconds;
         self.z += move_z * speed * delta_seconds;
+
+        if self.on_ground
+            && world.blocks_walk_onto_ledge(
+                self.x,
+                self.z,
+                self.y,
+                self.foot_y(),
+                self.eye_height,
+            )
+        {
+            self.x = prev_x;
+            self.z = prev_z;
+        }
 
         if input.jump && !self.prev_jump && self.on_ground && crouch_factor < 0.05 && !input.crouch
         {

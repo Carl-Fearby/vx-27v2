@@ -119,6 +119,17 @@
   transform: translateY(8px);
 }
 
+.hud-ammo-value--compact {
+  font-size: clamp(0.65rem, 1.44vw, 1.05rem);
+  letter-spacing: 0.04em;
+}
+
+.hud-ammo-stat--low .hud-ammo-label,
+.hud-ammo-stat--low .hud-ammo-value {
+  color: rgb(230, 50, 30);
+  transition: color 0.4s ease;
+}
+
 .hud-ammo-stat--left {
   left: var(--hud-rounds-x, 33%);
   top: var(--hud-rounds-y, 10%);
@@ -132,6 +143,113 @@
 .hud-ammo-stat--right {
   left: var(--hud-mags-x, 67%);
   top: var(--hud-mags-y, 10%);
+}
+
+/* Fire-mode carousel — right slot on ammo HUD (GE2/GE3) */
+.hud-fire-carousel {
+  position: absolute;
+  left: var(--hud-fire-carousel-x, 92%);
+  top: var(--hud-fire-carousel-y, 25%);
+  transform: translateX(-50%) scale(var(--hud-fire-carousel-scale, 2.5));
+  transform-origin: center top;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.hud-fire-carousel-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  padding: 0.1rem 0.15rem;
+  cursor: pointer;
+}
+
+.hud-fire-carousel-viewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-width: clamp(2.4rem, 5.5vw, 3.6rem);
+}
+
+.hud-fire-carousel-slide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-fire-carousel-slide--next {
+  animation: hud-fire-slide-in-next 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hud-fire-carousel-slide--prev {
+  animation: hud-fire-slide-in-prev 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes hud-fire-slide-in-next {
+  from {
+    transform: translateX(62%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes hud-fire-slide-in-prev {
+  from {
+    transform: translateX(-62%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.hud-fire-carousel-slot--center:hover .hud-fire-carousel-slide {
+  transform: scale(1.04);
+  transition: transform 0.15s ease;
+}
+
+.hud-fire-carousel-slot--center:hover .hud-fire-carousel-slide--next,
+.hud-fire-carousel-slot--center:hover .hud-fire-carousel-slide--prev {
+  transform: none;
+}
+
+.hud-fire-carousel-bullets {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.08rem;
+}
+
+.hud-fire-carousel-bullet-pair {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.hud-fire-carousel-bullet {
+  height: clamp(0.85rem, 1.85vw, 1.35rem);
+  width: auto;
+  display: block;
+  filter: brightness(0) saturate(100%) invert(58%) sepia(89%) saturate(1200%)
+    hue-rotate(186deg) brightness(103%) contrast(101%);
+}
+
+.hud-fire-carousel-tag {
+  font-family: var(--font-hud);
+  font-size: clamp(0.62rem, 1.2vw, 0.9rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgb(94, 170, 255);
+  margin-left: 0.08rem;
 }
 
 /* Top-right health bar */

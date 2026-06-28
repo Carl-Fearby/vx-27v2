@@ -161,6 +161,7 @@ export default function GameShell() {
   const hudVisible = settings.hudVisible && !materialEditMode;
   const weaponHud = useWeaponHudState({
     enabled: hudVisible,
+    bindings,
   });
 
   return (
@@ -199,6 +200,14 @@ export default function GameShell() {
         selectedWeaponSlot={weaponHud.selectedWeaponSlot}
         grenadeCount={weaponHud.grenadeCount}
         flashbangCount={weaponHud.flashbangCount}
+        primaryAmmo={weaponHud.primaryAmmo}
+        roundsInMag={weaponHud.roundsInMag}
+        spareMags={weaponHud.spareMags}
+        activeMagazineSize={weaponHud.activeMagazineSize}
+        activeLowAmmoThreshold={weaponHud.activeLowAmmoThreshold}
+        fireMode={weaponHud.fireMode}
+        activeFireModes={weaponHud.activeFireModes}
+        onCycleFireMode={weaponHud.cycleFireModeHud}
         hudWeaponTuning={hudWeaponTuning}
       />
       {!sceneReady ? (

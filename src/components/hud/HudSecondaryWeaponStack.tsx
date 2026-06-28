@@ -7,6 +7,7 @@ import {
   WEAPON_SLOT_IDS,
 } from "@/lib/hud/weaponHud";
 import { resolveStackSelection } from "@/lib/hud/weaponStackLayout";
+import { getSecondarySlotStock } from "@/lib/weapons/secondaryWeapons";
 
 type HudSecondaryWeaponStackProps = {
   grenadeCount?: number;
@@ -16,16 +17,6 @@ type HudSecondaryWeaponStackProps = {
   frameY?: number;
   layoutStyle?: CSSProperties;
 };
-
-function getSecondarySlotStock(
-  slotId: number,
-  grenadeCount: number,
-  flashbangCount: number,
-): number | null {
-  if (slotId === 1) return grenadeCount;
-  if (slotId === 2) return flashbangCount;
-  return null;
-}
 
 const HudSecondaryWeaponStack = memo(function HudSecondaryWeaponStack({
   grenadeCount = 0,
@@ -59,11 +50,10 @@ const HudSecondaryWeaponStack = memo(function HudSecondaryWeaponStack({
         {visibleSlots.map((slotId) => {
           const weaponUi = SECONDARY_WEAPON_UI[slotId];
           const isSelected = slotId === stackSelected;
-          const stock = getSecondarySlotStock(
-            slotId,
-            grenadeCount,
-            flashbangCount,
-          );
+          const stock = getSecondarySlotStock(slotId, {
+            grenades: grenadeCount,
+            flashbangs: flashbangCount,
+          });
           const isReserved = weaponUi?.reserved === true;
           const isEmpty = stock != null && stock <= 0;
 

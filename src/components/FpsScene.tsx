@@ -34,6 +34,7 @@ import {
   FLOOR_ALBEDO_TINT,
 } from "@/lib/floor/floorAssets";
 import { DEATH_FADE_MS, DEATH_MIN_DISPLAY_MS } from "@/lib/floor/floorHoles";
+import { createJumpBlocks } from "@/lib/arena/createJumpBlocks";
 import { createIndustrialWallMaterial } from "@/lib/wall/createIndustrialWallMaterial";
 import { createArenaPerimeterWalls } from "@/lib/wall/createArenaWalls";
 import { createEastWallCatwalk } from "@/lib/wall/createEastWallCatwalk";
@@ -557,6 +558,7 @@ export default function FpsScene(props: FpsSceneProps) {
         catwalkDeckMaterial,
         catwalkEdgeMaterial,
       );
+      const jumpBlocks = createJumpBlocks(scene);
       const arenaStructures = [...arenaWalls, ...eastCatwalk];
       for (const wall of arenaWalls) {
         tagEditableSurface(wall, "wall");
@@ -565,7 +567,7 @@ export default function FpsScene(props: FpsSceneProps) {
       for (const rail of eastCatwalk.slice(1)) {
         tagEditableSurface(rail, "catwalkEdge");
       }
-      landingMeshes.push(platform, eastCatwalk[0]);
+      landingMeshes.push(platform, eastCatwalk[0], ...jumpBlocks);
 
       const [centerEnemyMeshes, loadedViewWeapon] = await Promise.all([
         loadCenterEnemy(scene),
@@ -576,27 +578,21 @@ export default function FpsScene(props: FpsSceneProps) {
         return;
       }
 
-      for (const mesh of [
+      const levelSolidMeshes = [
         platform,
         pillar,
         ...arenaStructures,
+        ...jumpBlocks,
         ...centerEnemyMeshes,
-      ]) {
+      ];
+      for (const mesh of levelSolidMeshes) {
         mesh.renderingGroupId = WORLD_RENDERING_GROUP;
       }
       const shadowReceivers = [
-        platform,
-        pillar,
-        ...arenaStructures,
-        ...centerEnemyMeshes,
+        ...levelSolidMeshes,
         ...viewWeapon.shadowMeshes,
       ];
-      /** Floor receives only — casting from the deck onto itself breaks sun/moon shadows. */
-      const shadowCasters = [
-        pillar,
-        ...arenaStructures,
-        ...centerEnemyMeshes,
-      ];
+      const shadowCasters = levelSolidMeshes;
 
       const playerCollider = MeshBuilder.CreateSphere(
         "playerCollisionProbe",
@@ -605,6 +601,7 @@ export default function FpsScene(props: FpsSceneProps) {
       );
       playerCollider.isVisible = false;
       playerCollider.isPickable = false;
+      playerCollider.checkCollisions = true;
       playerCollider.ellipsoid = new Vector3(
         PLAYER_COLLISION_RADIUS,
         PLAYER_COLLISION_HALF_HEIGHT,
@@ -978,7 +975,11 @@ export default function FpsScene(props: FpsSceneProps) {
             collisionBlockedThisFrame = false;
 
             if (!gameCore.falling_through_hole()) {
-              playerCollider.position.copyFrom(previousCorePosition);
+              playerCollider.position.set(
+                previousCorePosition.x,
+                gameCore.position_y(),
+                previousCorePosition.z,
+              );
               collisionDisplacement.set(
                 gameCore.position_x() - previousCorePosition.x,
                 0,
@@ -1135,9 +1136,9 @@ export default function FpsScene(props: FpsSceneProps) {
         collisionFootprintDebug.setEnabled(showCollisionFootprint);
         if (showCollisionFootprint) {
           collisionFootprintDebug.sync(
-            gameCore.position_x(),
+            playerCollider.position.x,
             playerFootY(gameCore.position_y(), gameCore.eye_height()),
-            gameCore.position_z(),
+            playerCollider.position.z,
             collisionBlockedThisFrame,
           );
         }

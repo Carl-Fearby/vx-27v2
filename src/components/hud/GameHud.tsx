@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type CSSProperties } from "react";
 import HudCompass from "@/components/hud/HudCompass";
+import HudFireModeCarousel from "@/components/hud/HudFireModeCarousel";
 import HudPrimaryWeaponStack from "@/components/hud/HudPrimaryWeaponStack";
 import HudSecondaryWeaponStack from "@/components/hud/HudSecondaryWeaponStack";
 import {
@@ -17,6 +18,12 @@ import {
   GRENADE_WEAPON_SLOT,
   type PrimaryWeaponId,
 } from "@/lib/hud/weaponHud";
+import type { FireMode } from "@/lib/weapons/primaryWeapons";
+import {
+  hudAmmoValueCompactClass,
+  isAmmoEmpty,
+  isRoundsLow,
+} from "@/lib/hud/ammoHud";
 import {
   buildHudWeaponOpacityStyle,
   type HudWeaponTuning,
@@ -36,6 +43,14 @@ type GameHudProps = {
   grenadeCount?: number;
   flashbangCount?: number;
   hudWeaponTuning?: HudWeaponTuning;
+  primaryAmmo?: Partial<Record<PrimaryWeaponId, { rounds: number }>>;
+  roundsInMag?: number;
+  spareMags?: number;
+  activeMagazineSize?: number;
+  activeLowAmmoThreshold?: number;
+  fireMode?: FireMode;
+  activeFireModes?: FireMode[];
+  onCycleFireMode?: () => void;
 };
 
 const HB_CORNER_PX = 3;
@@ -61,6 +76,14 @@ export default function GameHud({
   grenadeCount = 0,
   flashbangCount = 0,
   hudWeaponTuning,
+  primaryAmmo,
+  roundsInMag = 0,
+  spareMags = 0,
+  activeMagazineSize = 0,
+  activeLowAmmoThreshold = 0,
+  fireMode = "single",
+  activeFireModes = ["single"],
+  onCycleFireMode,
 }: GameHudProps) {
   const compassTapeRef = useRef<HTMLDivElement>(null);
   const compassViewportRef = useRef<HTMLDivElement>(null);
@@ -83,6 +106,12 @@ export default function GameHud({
     activePrimaryWeapon === "rifle"
       ? Math.max(1 - rifleAdsReticleReady, 0)
       : 1;
+  const roundsLow = isRoundsLow(
+    roundsInMag,
+    spareMags,
+    activeLowAmmoThreshold,
+  );
+  const ammoEmpty = isAmmoEmpty(roundsInMag, spareMags);
 
   useEffect(() => {
     if (!visible) {
@@ -134,6 +163,9 @@ export default function GameHud({
             "--hud-value-font": `${bottomBarLayout.valueFont}vw`,
             "--hud-label-scale": String(bottomBarLayout.labelScale),
             "--hud-label-y": `${bottomBarLayout.labelY}px`,
+            "--hud-fire-carousel-x": `${bottomBarLayout.fireCarouselX}%`,
+            "--hud-fire-carousel-y": `${bottomBarLayout.fireCarouselY}%`,
+            "--hud-fire-carousel-scale": String(bottomBarLayout.fireCarouselScale),
           } as CSSProperties
         }
       >
@@ -148,20 +180,59 @@ export default function GameHud({
           <img src="/ui/settings.webp" alt="" className="hud-gear-img" />
         </button>
 
-        <div className="hud-ammo-stat hud-ammo-stat--left">
+        <div
+          className={[
+            "hud-ammo-stat hud-ammo-stat--left",
+            roundsLow ? "hud-ammo-stat--low" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <span className="hud-ammo-label">ROUNDS</span>
-          <span className="hud-ammo-value">30</span>
+          <span
+            className={`hud-ammo-value${hudAmmoValueCompactClass(roundsInMag)}`}
+          >
+            {String(roundsInMag).padStart(2, "0")}
+          </span>
         </div>
 
-        <div className="hud-ammo-stat hud-ammo-stat--center">
+        <div
+          className={[
+            "hud-ammo-stat hud-ammo-stat--center",
+            ammoEmpty ? "hud-ammo-stat--low" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <span className="hud-ammo-label">MAG</span>
-          <span className="hud-ammo-value">30</span>
+          <span
+            className={`hud-ammo-value${hudAmmoValueCompactClass(activeMagazineSize)}`}
+          >
+            {String(activeMagazineSize).padStart(2, "0")}
+          </span>
         </div>
 
-        <div className="hud-ammo-stat hud-ammo-stat--right">
+        <div
+          className={[
+            "hud-ammo-stat hud-ammo-stat--right",
+            ammoEmpty ? "hud-ammo-stat--low" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <span className="hud-ammo-label">MAGS</span>
-          <span className="hud-ammo-value">03</span>
+          <span
+            className={`hud-ammo-value${hudAmmoValueCompactClass(spareMags)}`}
+          >
+            {String(spareMags).padStart(2, "0")}
+          </span>
         </div>
+
+        <HudFireModeCarousel
+          modes={activeFireModes}
+          activeMode={fireMode}
+          onCycle={() => onCycleFireMode?.()}
+        />
       </div>
 
       <div className="hud-stamina-cluster">
@@ -272,6 +343,7 @@ export default function GameHud({
 
       <HudPrimaryWeaponStack
         activePrimaryWeapon={activePrimaryWeapon}
+        primaryAmmo={primaryAmmo}
         layoutStyle={weaponSlotLayoutStyle}
       />
 

@@ -22,7 +22,10 @@ type HudPrimaryWeaponStackProps = {
 
 const HudPrimaryWeaponStack = memo(function HudPrimaryWeaponStack({
   activePrimaryWeapon = "rifle",
-  primaryAmmo = { rifle: { rounds: 80 }, pistol: { rounds: 12 } },
+  primaryAmmo = {
+    rifle: { rounds: 80 },
+    pistol: { rounds: 12 },
+  },
   rifleUnlocked = true,
   frameX = 17,
   frameY = 15,
