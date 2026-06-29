@@ -8,13 +8,19 @@ import {
 import {
   addOilBarrelFireLight,
   collectOilBarrelFireLights,
+  refreshOilBarrelFireLightLayout,
   tickOilBarrelFireLights,
 } from "@/lib/oilBarrel/oilBarrelFireLight";
 import {
+  applyOilBarrelInteriorVideoTuning,
   collectOilBarrelInteriorVideoMeshes,
   createOilBarrelInteriorVideoMesh,
+  refreshOilBarrelInteriorVideoLayout,
   tickOilBarrelInteriorVideo,
 } from "@/lib/oilBarrel/oilBarrelInteriorVideo";
+import {
+  normalizeOilBarrelEditorFireTuning,
+} from "@/lib/oilBarrel/oilBarrelEditorSettings";
 import {
   resolveOilBarrelOverlayDimensions,
 } from "@/lib/oilBarrel/oilBarrelDimensions";
@@ -27,7 +33,9 @@ import {
   loadModelOverlayPackage,
   resolveOilBarrelFireTuning,
   type OilBarrelFireOverlay,
+  type OilBarrelFireVideoConfig,
 } from "@/lib/oilBarrel/overlayPackage";
+import type { OilBarrelFireTuning } from "@/lib/oilBarrel/oilBarrelTuning";
 
 export type OilBarrelOverlayRuntime = {
   videoMeshes: Mesh[];
@@ -75,7 +83,7 @@ async function attachOilBarrelFireOverlay(
     return null;
   }
 
-  const tuning = resolveOilBarrelFireTuning(overlay);
+  const tuning = normalizeOilBarrelEditorFireTuning(resolveOilBarrelFireTuning(overlay));
   const dimensions = resolveOilBarrelOverlayDimensions(
     barrelRoot,
     overlay.dimensions,
@@ -90,6 +98,7 @@ async function attachOilBarrelFireOverlay(
     floorY,
     clipTopY,
     interiorFire: tuning.interiorFire !== false,
+    fireTuning: tuning,
   };
 
   let videoMesh: Mesh | null = null;
@@ -160,9 +169,13 @@ export async function attachModelOverlays(
   }
 
   runtimeByRoot.set(modelRoot, runtime);
+  const fireOverlay = overlayPackage.overlays.find(
+    (entry): entry is OilBarrelFireOverlay => entry.type === "oilBarrelFire",
+  );
   modelRoot.metadata = {
     ...modelRoot.metadata,
     overlayPackageId: overlayPackage.packageId,
+    oilBarrelOverlayVideo: fireOverlay?.video ?? null,
   };
 
   const defaultFireOn = overlayPackage.overlays.some(
@@ -224,6 +237,71 @@ export async function applyOilBarrelInteriorFireSetting(
     setOilBarrelInteriorFire(modelRoot, enabled);
   }
   return true;
+}
+
+export function applyOilBarrelFireTuning(
+  modelRoot: TransformNode,
+  tuning: OilBarrelFireTuning,
+): void {
+  const normalized = normalizeOilBarrelEditorFireTuning(tuning);
+  const barrel = findOilBarrelRoot(modelRoot);
+  if (barrel) {
+    barrel.metadata = {
+      ...barrel.metadata,
+      fireTuning: normalized,
+    };
+  }
+
+  const runtime = runtimeByRoot.get(modelRoot);
+  if (!runtime) {
+    return;
+  }
+
+  const videoConfig = modelRoot.metadata?.oilBarrelOverlayVideo as
+    | OilBarrelFireVideoConfig
+    | null
+    | undefined;
+  const innerRadius = barrel?.metadata?.innerRadius;
+  const floorY = barrel?.metadata?.floorY;
+  const clipTopY = barrel?.metadata?.clipTopY;
+
+  if (
+    videoConfig &&
+    typeof innerRadius === "number" &&
+    typeof floorY === "number" &&
+    typeof clipTopY === "number"
+  ) {
+    for (const mesh of runtime.videoMeshes) {
+      refreshOilBarrelInteriorVideoLayout(
+        mesh,
+        videoConfig,
+        innerRadius,
+        floorY,
+        clipTopY,
+        normalized,
+      );
+    }
+    if (runtime.fireLightsRoot) {
+      refreshOilBarrelFireLightLayout(
+        runtime.fireLightsRoot,
+        innerRadius,
+        floorY,
+        clipTopY,
+        normalized,
+      );
+    }
+    return;
+  }
+
+  applyOilBarrelInteriorVideoTuning(runtime.videoMeshes, normalized);
+}
+
+export function getOilBarrelFireTuning(
+  modelRoot: TransformNode | null | undefined,
+): OilBarrelFireTuning | null {
+  const barrel = modelRoot ? findOilBarrelRoot(modelRoot) : null;
+  const tuning = barrel?.metadata?.fireTuning;
+  return tuning && typeof tuning === "object" ? (tuning as OilBarrelFireTuning) : null;
 }
 
 export function getOilBarrelInteriorFire(

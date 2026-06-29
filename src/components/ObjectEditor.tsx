@@ -47,14 +47,27 @@ import {
 import { loadGltfModel, loadGltfModelFromFile } from "@/lib/assets/loadGltfModel";
 import {
   applyOilBarrelInteriorFireSetting,
+  applyOilBarrelFireTuning,
   attachModelOverlays,
+  getOilBarrelFireTuning,
   tickModelOverlays,
 } from "@/lib/oilBarrel/attachModelOverlays";
 import { isOilBarrelModelPath } from "@/lib/oilBarrel/oilBarrelAssets";
 import {
+  getDefaultOilBarrelEditorFireTuning,
+  loadOilBarrelEditorFireTuningPatch,
   loadOilBarrelEditorInteriorFire,
+  mergeOilBarrelEditorFireTuning,
+  normalizeOilBarrelEditorFireTuning,
+  saveOilBarrelEditorFireTuningPatch,
   saveOilBarrelEditorInteriorFire,
 } from "@/lib/oilBarrel/oilBarrelEditorSettings";
+import {
+  getOilBarrelFireTuningControlLimits,
+  OIL_BARREL_FIRE_TUNING_CONTROL_GROUPS,
+  saveOilBarrelFireTuningToOverlay,
+} from "@/lib/oilBarrel/oilBarrelEditorFireControls";
+import type { OilBarrelFireTuning } from "@/lib/oilBarrel/oilBarrelTuning";
 import {
   DEFAULT_MODEL_LIBRARY_FOLDER,
   OBJECT_EDITOR_ASSETS,
@@ -718,6 +731,12 @@ export default function ObjectEditor() {
   const [oilBarrelFireEnabled, setOilBarrelFireEnabled] = useState(
     loadOilBarrelEditorInteriorFire,
   );
+  const [oilBarrelFireTuning, setOilBarrelFireTuning] = useState(
+    getDefaultOilBarrelEditorFireTuning,
+  );
+  const [oilBarrelTuningSaveStatus, setOilBarrelTuningSaveStatus] =
+    useState<SaveStatus>("idle");
+  const [oilBarrelTuningSaveMessage, setOilBarrelTuningSaveMessage] = useState("");
   const historyRef = useRef<{
     undo: ObjectEditorHistorySnapshot[];
     redo: ObjectEditorHistorySnapshot[];
@@ -1098,6 +1117,8 @@ export default function ObjectEditor() {
     currentRootRef.current?.dispose(false, true);
     currentRootRef.current = null;
     setOilBarrelEditorActive(false);
+    setOilBarrelTuningSaveStatus("idle");
+    setOilBarrelTuningSaveMessage("");
 
     const load = async () => {
       try {
@@ -1136,6 +1157,12 @@ export default function ObjectEditor() {
               displayAsset.path,
               fireEnabled,
             );
+            const editorTuning = mergeOilBarrelEditorFireTuning(
+              getOilBarrelFireTuning(root) ?? getDefaultOilBarrelEditorFireTuning(),
+              loadOilBarrelEditorFireTuningPatch(),
+            );
+            applyOilBarrelFireTuning(root, editorTuning);
+            setOilBarrelFireTuning(editorTuning);
           } catch {
             // GLB still loads if fire videos fail — user can retry via the toggle.
           }
@@ -1472,6 +1499,60 @@ export default function ObjectEditor() {
     refreshSelectedSurface,
     saveStatus,
     status,
+  ]);
+
+  const patchOilBarrelFireTuning = useCallback(
+    (patch: Partial<OilBarrelFireTuning>) => {
+      const root = currentRootRef.current;
+      if (!root) {
+        return;
+      }
+      setOilBarrelFireTuning((current) => {
+        const next = normalizeOilBarrelEditorFireTuning({
+          ...current,
+          ...patch,
+          interiorFire: oilBarrelFireEnabled,
+        });
+        saveOilBarrelEditorFireTuningPatch(next);
+        applyOilBarrelFireTuning(root, next);
+        return next;
+      });
+    },
+    [oilBarrelFireEnabled],
+  );
+
+  const handleSaveOilBarrelFireTuning = useCallback(async () => {
+    if (!displayAsset || oilBarrelTuningSaveStatus === "saving") {
+      return;
+    }
+    setOilBarrelTuningSaveStatus("saving");
+    setOilBarrelTuningSaveMessage("");
+    try {
+      const tuning = normalizeOilBarrelEditorFireTuning({
+        ...oilBarrelFireTuning,
+        interiorFire: oilBarrelFireEnabled,
+      });
+      const result = await saveOilBarrelFireTuningToOverlay(
+        displayAsset.path,
+        tuning,
+      );
+      saveOilBarrelEditorFireTuningPatch({});
+      setOilBarrelFireTuning(tuning);
+      setOilBarrelTuningSaveStatus("success");
+      setOilBarrelTuningSaveMessage(
+        `Saved to ${result.overlayPath} at ${new Date(result.savedAt).toLocaleTimeString()}.`,
+      );
+    } catch (error) {
+      setOilBarrelTuningSaveStatus("error");
+      setOilBarrelTuningSaveMessage(
+        error instanceof Error ? error.message : "Failed to save fire tuning.",
+      );
+    }
+  }, [
+    displayAsset,
+    oilBarrelFireEnabled,
+    oilBarrelFireTuning,
+    oilBarrelTuningSaveStatus,
   ]);
 
   const savePreviewPath = previewSavedAssetPath(saveFolder, saveModelName);
@@ -1941,9 +2022,10 @@ export default function ObjectEditor() {
 
         {oilBarrelEditorActive ? (
           <section className="object-editor-tool-section">
-            <h3>Oil barrel</h3>
+            <h3>Oil barrel fire</h3>
             <p className="object-editor-save-hint">
-              Global editor preview — saved in this browser. Not baked into the GLB.
+              Preview tuning is stored in this browser until you save it back to
+              the overlay JSON (dev only).
             </p>
             <label className="object-editor-control object-editor-control--inline">
               <span>Interior fire</span>
@@ -1970,11 +2052,69 @@ export default function ObjectEditor() {
                     if (!applied) {
                       saveOilBarrelEditorInteriorFire(false);
                       setOilBarrelFireEnabled(false);
+                      return;
                     }
+                    patchOilBarrelFireTuning({ interiorFire: enabled });
                   })();
                 }}
               />
             </label>
+            {OIL_BARREL_FIRE_TUNING_CONTROL_GROUPS.map((group) => (
+              <div key={group.title}>
+                <p className="object-editor-save-hint">
+                  {group.title}
+                  {group.hint ? ` — ${group.hint}` : ""}
+                </p>
+                {group.controls.map((control) => {
+                  const limits = getOilBarrelFireTuningControlLimits(control.key);
+                  return (
+                    <NumericControl
+                      key={control.key}
+                      label={control.label}
+                      value={oilBarrelFireTuning[control.key]}
+                      min={limits.min}
+                      max={limits.max}
+                      step={limits.step}
+                      buttonStep={limits.nudge}
+                      disabled={status !== "ready" || !oilBarrelFireEnabled}
+                      onChange={(value) => {
+                        patchOilBarrelFireTuning({ [control.key]: value });
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+            <div className="object-editor-save-actions">
+              <button
+                type="button"
+                className="object-editor-save-btn"
+                disabled={
+                  status !== "ready" ||
+                  !oilBarrelFireEnabled ||
+                  oilBarrelTuningSaveStatus === "saving"
+                }
+                onClick={() => {
+                  void handleSaveOilBarrelFireTuning();
+                }}
+              >
+                {oilBarrelTuningSaveStatus === "saving"
+                  ? "Saving…"
+                  : "Save fire tuning to overlay"}
+              </button>
+            </div>
+            {oilBarrelTuningSaveMessage ? (
+              <p
+                className={[
+                  "object-editor-save-message",
+                  oilBarrelTuningSaveStatus === "error"
+                    ? "object-editor-save-message--error"
+                    : "object-editor-save-message--success",
+                ].join(" ")}
+              >
+                {oilBarrelTuningSaveMessage}
+              </p>
+            ) : null}
           </section>
         ) : null}
 

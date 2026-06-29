@@ -19,9 +19,7 @@
         "alpha": "/textures/oil_barrel/inside/oil_can_interior_alpha.mp4?v=fire-alpha-looped",
         "aspect": 1.7763157894736842,
         "floorLift": 0.04,
-        "clipRadiusFactor": 0.96,
-        "topFadeStart": 0.48,
-        "topFadeEnd": 0.9
+        "clipRadiusFactor": 0.96
       },
       "tuning": {
         "interiorFire": true,
@@ -32,6 +30,8 @@
         "interiorFireOffsetX": 0.185,
         "interiorFlameTexBottom": 0.15,
         "interiorFlameTexTop": 0.92,
+        "interiorFireTopFadeStart": 0.48,
+        "interiorFireTopFadeEnd": 0.9,
         "interiorFireLightIntensity": 7,
         "interiorFireLightLeftX": -0.042,
         "interiorFireLightRightX": 0.042,

@@ -178,3 +178,31 @@ export function tickOilBarrelFireLights(
 ): void {
   updateCandleFlicker(collectOilBarrelFireLights(root), timeSec);
 }
+
+export function refreshOilBarrelFireLightLayout(
+  rig: TransformNode,
+  innerRadius: number,
+  floorY: number,
+  rimY: number,
+  tuning: OilBarrelFireTuning,
+): void {
+  const layout = computeInteriorFlameLayout(innerRadius, floorY, rimY, tuning);
+  rig.position.set(layout.x, layout.y, layout.z);
+
+  for (const child of rig.getChildren()) {
+    if (!(child instanceof PointLight)) {
+      continue;
+    }
+    const side =
+      (child.metadata?.fireLightSide as -1 | 1 | undefined) ??
+      (child.name === FIRE_LIGHT_NAME_L ? -1 : 1);
+    child.intensity = perSideFireLightIntensity(tuning, side);
+  }
+
+  applyFireLightSidePositions(
+    rig,
+    tuning,
+    layout.layoutTopY,
+    layout.layoutBottomY,
+  );
+}

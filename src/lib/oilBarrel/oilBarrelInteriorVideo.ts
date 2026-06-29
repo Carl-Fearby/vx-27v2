@@ -19,12 +19,13 @@ import {
 import { computeInteriorFlameLayout } from "@/lib/oilBarrel/oilBarrelFlameLayout";
 import {
   normalizeFlameTexVRange,
+  normalizeFireTopFadeRange,
   type OilBarrelFireTuning,
 } from "@/lib/oilBarrel/oilBarrelTuning";
 import type { OilBarrelFireVideoConfig } from "@/lib/oilBarrel/overlayPackage";
 
-/** GE2 OilBarrelInteriorVideo.js INTERIOR_VIDEO_SHADER_GEN — bump to bust material cache. */
-const INTERIOR_VIDEO_SHADER = "oilBarrelInteriorVideoGe2";
+/** GE2 OilBarrelInteriorVideo.js — bump to bust material cache after shader edits. */
+const INTERIOR_VIDEO_SHADER = "oilBarrelInteriorVideoGe2v4";
 export const OIL_INTERIOR_VIDEO_MESH_NAME = "oil_interior_video";
 
 Effect.ShadersStore[`${INTERIOR_VIDEO_SHADER}VertexShader`] = `
@@ -72,9 +73,13 @@ void main(void) {
   float key = smoothstep(0.05, 0.2, lum);
   float blueSpill = smoothstep(0.12, 0.42, rgb.b - max(rgb.r, rgb.g));
   float alpha = matte * key * (1.0 - blueSpill * 0.92);
-  float topFade = 1.0 - smoothstep(topFadeStart, topFadeEnd, vUv.y);
+
+  // Plane height for fade: 0=bottom, 1=top (GE2). Vertex vUv.y is flipped for Babylon video sampling.
+  float planeHeight = 1.0 - vUv.y;
+  float topFade = 1.0 - smoothstep(topFadeStart, topFadeEnd, planeHeight);
   alpha *= topFade;
-  if (alpha < 0.02) discard;
+
+  if (alpha < 0.004) discard;
   rgb *= alpha;
   gl_FragColor = vec4(rgb, alpha);
 }
@@ -227,8 +232,9 @@ function createInteriorVideoMaterial(
   material.setFloat("clipTopY", clipTopY);
   material.setFloat("sampleV0", sampleV0);
   material.setFloat("sampleV1", sampleV1);
-  material.setFloat("topFadeStart", videoConfig.topFadeStart);
-  material.setFloat("topFadeEnd", videoConfig.topFadeEnd);
+  const { topFadeStart, topFadeEnd } = normalizeFireTopFadeRange(tuning);
+  material.setFloat("topFadeStart", topFadeStart);
+  material.setFloat("topFadeEnd", topFadeEnd);
   material.setMatrix("barrelMatrixInverse", Matrix.Identity());
 
   return material;
@@ -286,9 +292,68 @@ export async function createOilBarrelInteriorVideoMesh(
     innerRadius,
     floorY,
     clipTopY,
+    baseVideoWidth: layout.width,
+    baseVideoHeight: layout.height,
   };
 
   return mesh;
+}
+
+function applyInteriorVideoLayoutToMesh(
+  mesh: Mesh,
+  layout: ReturnType<typeof computeInteriorFlameLayout>,
+): void {
+  const baseWidth = mesh.metadata?.baseVideoWidth;
+  const baseHeight = mesh.metadata?.baseVideoHeight;
+  if (
+    typeof baseWidth === "number" &&
+    baseWidth > 0 &&
+    typeof baseHeight === "number" &&
+    baseHeight > 0
+  ) {
+    mesh.scaling.x = layout.width / baseWidth;
+    mesh.scaling.y = layout.height / baseHeight;
+  }
+  mesh.position.set(layout.x, layout.y, layout.z);
+}
+
+export function refreshOilBarrelInteriorVideoLayout(
+  mesh: Mesh,
+  videoConfig: OilBarrelFireVideoConfig,
+  innerRadius: number,
+  floorY: number,
+  clipTopY: number,
+  tuning: OilBarrelFireTuning,
+): void {
+  const layout = computeInteriorFlameLayout(
+    innerRadius,
+    floorY,
+    clipTopY,
+    tuning,
+    videoConfig.aspect,
+    videoConfig.floorLift,
+  );
+  applyInteriorVideoLayoutToMesh(mesh, layout);
+  applyOilBarrelInteriorVideoTuning([mesh], tuning);
+}
+
+export function applyOilBarrelInteriorVideoTuning(
+  videoMeshes: Mesh[],
+  tuning: OilBarrelFireTuning,
+): void {
+  const { sampleV0, sampleV1 } = normalizeFlameTexVRange(tuning);
+  const { topFadeStart, topFadeEnd } = normalizeFireTopFadeRange(tuning);
+
+  for (const mesh of videoMeshes) {
+    const material = mesh.material as ShaderMaterial | null;
+    if (!material) {
+      continue;
+    }
+    material.setFloat("sampleV0", sampleV0);
+    material.setFloat("sampleV1", sampleV1);
+    material.setFloat("topFadeStart", topFadeStart);
+    material.setFloat("topFadeEnd", topFadeEnd);
+  }
 }
 
 function findOilBarrelRoot(node: AbstractMesh | TransformNode): TransformNode | null {

@@ -15,7 +15,7 @@ const BARREL_OCCLUDER_MESH_NAMES = new Set([
   "oil_barrel_cap_bottom",
 ]);
 
-/** GE2 interior wall uses BackSide — hide inner faces from outside so depth comes from the shell. */
+/** Interior meshes stay double-sided (GLB export) so the inner wall/floor remain visible. */
 const BARREL_INTERIOR_MESH_NAMES = new Set([
   "oil_interior_wall",
   "oil_interior_bottom",
@@ -54,9 +54,9 @@ function configureBarrelInteriorMesh(mesh: Mesh, renderingGroupId: number): void
   if (!(material instanceof PBRMaterial)) {
     return;
   }
-  // GLB exports doubleSided; GE2 uses BackSide so the exterior shell owns outside depth.
-  material.backFaceCulling = true;
-  material.twoSidedLighting = false;
+  // Preserve GLB doubleSided interior — BackSide-only culling hides the wall from above.
+  material.backFaceCulling = false;
+  material.twoSidedLighting = true;
 }
 
 function configureFireVideoMesh(mesh: Mesh, renderingGroupId: number): void {
