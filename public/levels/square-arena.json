@@ -60,5 +60,23 @@
       "depth": 2.5,
       "height": 1.5
     }
+  ],
+  "oilBarrels": [
+    {
+      "id": "oil_barrel_spawn_fire",
+      "x": -3.5,
+      "z": 2.5,
+      "rotationY": 0.35,
+      "interiorFire": true,
+      "note": "Open-top fire barrel — GE2 interior video + flicker lights"
+    },
+    {
+      "id": "oil_barrel_pillar_cold",
+      "x": 3.5,
+      "z": 5.5,
+      "rotationY": -0.8,
+      "interiorFire": false,
+      "note": "Same GLB without fire overlay active"
+    }
   ]
 }

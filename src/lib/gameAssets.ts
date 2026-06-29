@@ -1,6 +1,10 @@
 import { levelJsonUrl } from "@/lib/level/deriveLevelRuntime";
 import { CENTER_ENEMY_MODEL_URL } from "@/lib/enemies/enemyAssets";
 import {
+  OIL_BARREL_FIRE_VIDEO_URLS,
+  OIL_BARREL_MODEL_URL,
+} from "@/lib/oilBarrel/oilBarrelAssets";
+import {
   GE2_PLAYER_WEAPON_MODELS,
 } from "@/lib/assets/ge2ImportedAssets";
 import {
@@ -18,7 +22,11 @@ const PRELOAD_STEPS = [
 ] as const;
 
 const WORLD_ASSETS = [SKY_DAY_URL, SKY_NIGHT_URL, MOON_TEXTURE_URL, levelJsonUrl()];
-const MODEL_ASSETS = [CENTER_ENEMY_MODEL_URL];
+const MODEL_ASSETS = [
+  CENTER_ENEMY_MODEL_URL,
+  OIL_BARREL_MODEL_URL,
+  ...OIL_BARREL_FIRE_VIDEO_URLS,
+];
 const VIEW_WEAPON_ASSETS = [
   GE2_PLAYER_WEAPON_MODELS.pistol,
   GE2_PLAYER_WEAPON_MODELS.rifle,

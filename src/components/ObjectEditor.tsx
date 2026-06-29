@@ -46,6 +46,16 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { loadGltfModel, loadGltfModelFromFile } from "@/lib/assets/loadGltfModel";
 import {
+  applyOilBarrelInteriorFireSetting,
+  attachModelOverlays,
+  tickModelOverlays,
+} from "@/lib/oilBarrel/attachModelOverlays";
+import { isOilBarrelModelPath } from "@/lib/oilBarrel/oilBarrelAssets";
+import {
+  loadOilBarrelEditorInteriorFire,
+  saveOilBarrelEditorInteriorFire,
+} from "@/lib/oilBarrel/oilBarrelEditorSettings";
+import {
   DEFAULT_MODEL_LIBRARY_FOLDER,
   OBJECT_EDITOR_ASSETS,
   type ObjectEditorAsset,
@@ -689,6 +699,8 @@ export default function ObjectEditor() {
   const [selectedSurface, setSelectedSurface] = useState<SurfaceSelection | null>(null);
   const [gridVisible, setGridVisible] = useState(true);
   const [viewportMode, setViewportMode] = useState<ViewportMode>("rotate");
+  const viewportModeRef = useRef<ViewportMode>("rotate");
+  const [sceneReadyGeneration, setSceneReadyGeneration] = useState(0);
   const [gizmoEnabled, setGizmoEnabled] = useState(true);
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("move");
   const [viewModes, setViewModes] = useState<ObjectEditorViewModes>({
@@ -702,6 +714,10 @@ export default function ObjectEditor() {
   const [saveDisplayName, setSaveDisplayName] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveMessage, setSaveMessage] = useState("");
+  const [oilBarrelEditorActive, setOilBarrelEditorActive] = useState(false);
+  const [oilBarrelFireEnabled, setOilBarrelFireEnabled] = useState(
+    loadOilBarrelEditorInteriorFire,
+  );
   const historyRef = useRef<{
     undo: ObjectEditorHistorySnapshot[];
     redo: ObjectEditorHistorySnapshot[];
@@ -844,6 +860,10 @@ export default function ObjectEditor() {
   }, [viewModes]);
 
   useEffect(() => {
+    viewportModeRef.current = viewportMode;
+  }, [viewportMode]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
@@ -873,7 +893,10 @@ export default function ObjectEditor() {
     camera.maxZ = 1000;
     camera.wheelDeltaPercentage = 0.015;
     camera.panningSensibility = OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY;
+    viewportModeRef.current = "rotate";
+    setViewportMode("rotate");
     applyViewportMode(camera, "rotate");
+    setSceneReadyGeneration((generation) => generation + 1);
     const panSyncObserver = camera.onAfterCheckInputsObservable.add(() => {
       syncObjectEditorPanSensibility(camera);
     });
@@ -965,6 +988,11 @@ export default function ObjectEditor() {
           );
         }
       }
+      tickModelOverlays(
+        currentRootRef.current,
+        camera,
+        performance.now() / 1000,
+      );
       scene.render();
     });
 
@@ -1025,8 +1053,8 @@ export default function ObjectEditor() {
     if (!camera) {
       return;
     }
-    applyViewportMode(camera, viewportMode);
-  }, [viewportMode]);
+    applyViewportMode(camera, viewportModeRef.current);
+  }, [viewportMode, sceneReadyGeneration]);
 
   useEffect(() => {
     if (gridRef.current) {
@@ -1069,6 +1097,7 @@ export default function ObjectEditor() {
     selectedRegionMeshesRef.current = [];
     currentRootRef.current?.dispose(false, true);
     currentRootRef.current = null;
+    setOilBarrelEditorActive(false);
 
     const load = async () => {
       try {
@@ -1094,6 +1123,30 @@ export default function ObjectEditor() {
         }
 
         configureMeshes(root);
+        const isOilBarrel = isOilBarrelModelPath(displayAsset.path);
+        setOilBarrelEditorActive(isOilBarrel);
+
+        if (isOilBarrel) {
+          const fireEnabled = loadOilBarrelEditorInteriorFire();
+          setOilBarrelFireEnabled(fireEnabled);
+          try {
+            await applyOilBarrelInteriorFireSetting(
+              scene,
+              root,
+              displayAsset.path,
+              fireEnabled,
+            );
+          } catch {
+            // GLB still loads if fire videos fail — user can retry via the toggle.
+          }
+        } else {
+          const overlayModelPath =
+            activeSelection.type === "catalog" ? displayAsset.path : null;
+          if (overlayModelPath) {
+            await attachModelOverlays(scene, root, overlayModelPath);
+          }
+        }
+
         currentRootRef.current = root;
         applyObjectEditorViewModes(root, viewModesRef.current);
         frameObject(camera, root);
@@ -1528,14 +1581,20 @@ export default function ObjectEditor() {
       label: "Rotate view",
       icon: faRotate,
       active: viewportMode === "rotate",
-      onToggle: () => setViewportMode("rotate"),
+      onToggle: () => {
+        viewportModeRef.current = "rotate";
+        setViewportMode("rotate");
+      },
     },
     {
       id: "viewport-pan",
       label: "Pan view",
       icon: faHand,
       active: viewportMode === "pan",
-      onToggle: () => setViewportMode("pan"),
+      onToggle: () => {
+        viewportModeRef.current = "pan";
+        setViewportMode("pan");
+      },
     },
     {
       id: "wireframe",
@@ -1879,6 +1938,45 @@ export default function ObjectEditor() {
             </div>
           </dl>
         </section>
+
+        {oilBarrelEditorActive ? (
+          <section className="object-editor-tool-section">
+            <h3>Oil barrel</h3>
+            <p className="object-editor-save-hint">
+              Global editor preview — saved in this browser. Not baked into the GLB.
+            </p>
+            <label className="object-editor-control object-editor-control--inline">
+              <span>Interior fire</span>
+              <input
+                type="checkbox"
+                checked={oilBarrelFireEnabled}
+                disabled={status !== "ready"}
+                onChange={(event) => {
+                  const enabled = event.currentTarget.checked;
+                  const root = currentRootRef.current;
+                  const scene = sceneRef.current;
+                  if (!root || !scene || !displayAsset) {
+                    return;
+                  }
+                  void (async () => {
+                    saveOilBarrelEditorInteriorFire(enabled);
+                    setOilBarrelFireEnabled(enabled);
+                    const applied = await applyOilBarrelInteriorFireSetting(
+                      scene,
+                      root,
+                      displayAsset.path,
+                      enabled,
+                    );
+                    if (!applied) {
+                      saveOilBarrelEditorInteriorFire(false);
+                      setOilBarrelFireEnabled(false);
+                    }
+                  })();
+                }}
+              />
+            </label>
+          </section>
+        ) : null}
 
         <section className="object-editor-tool-section">
           <h3>Imported Region</h3>

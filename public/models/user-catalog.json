@@ -30,6 +30,7 @@
     "notes": "Saved from object editor.",
     "folder": "assets",
     "modelName": "oil-barrel",
+    "overlayPackage": "/models/assets/oil-barrel.overlay.json",
     "savedAt": "2026-06-28T22:31:51.080Z"
   },
   {

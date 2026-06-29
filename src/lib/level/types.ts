@@ -37,6 +37,16 @@ export type LevelJumpBlock = {
   height: number;
 };
 
+export type LevelOilBarrel = {
+  id: string;
+  x: number;
+  z: number;
+  rotationY?: number;
+  footY?: number;
+  /** Open-top barrel with GE2 interior fire overlay. Defaults to true. */
+  interiorFire?: boolean;
+};
+
 /** Authoring format — `public/levels/*.json`. */
 export type LevelConfig = {
   meta: LevelMeta;
@@ -50,6 +60,7 @@ export type LevelConfig = {
   pillar: LevelPillar;
   catwalk: LevelCatwalk;
   jumpBlocks: LevelJumpBlock[];
+  oilBarrels?: LevelOilBarrel[];
 };
 
 export type WalkSurfaceSpec = {

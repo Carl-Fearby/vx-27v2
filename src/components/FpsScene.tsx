@@ -13,6 +13,7 @@ import {
   Quaternion,
   Ray,
   Scene,
+  TransformNode,
   Vector3,
 } from "@babylonjs/core";
 import {
@@ -54,6 +55,11 @@ import {
 } from "@/lib/catwalk/createCatwalkMaterials";
 import { createHazardPillarMaterial } from "@/lib/pillar/createHazardPillarMaterial";
 import { loadCenterEnemy } from "@/lib/enemies/loadCenterEnemy";
+import {
+  collectOilBarrelFirePositionsFromRoots,
+  tickOilBarrelOverlayRoots,
+} from "@/lib/oilBarrel/attachModelOverlays";
+import { spawnLevelOilBarrels } from "@/lib/oilBarrel/spawnLevelOilBarrels";
 import {
   createViewWeapon,
   type ViewWeapon,
@@ -451,6 +457,7 @@ export default function FpsScene(props: FpsSceneProps) {
     let viewWeapon: ViewWeapon | null = null;
     let laserTracers: LaserTracerSystem | null = null;
     let sounds: GameSoundManager | null = null;
+    let oilBarrelRoots: TransformNode[] = [];
     const landingMeshes: Mesh[] = [];
     const editableMaterials: Partial<Record<EditableSurfaceId, PBRMaterial>> = {};
     let appliedTuningSnapshot = "";
@@ -649,11 +656,15 @@ export default function FpsScene(props: FpsSceneProps) {
       }
       landingMeshes.push(platform, ...(eastCatwalk[0] ? [eastCatwalk[0]] : []), ...jumpBlocks);
 
-      const [centerEnemyMeshes, loadedViewWeapon] = await Promise.all([
-        loadCenterEnemy(scene),
-        createViewWeapon(scene),
-      ]);
+      const [centerEnemyMeshes, loadedViewWeapon, spawnedOilBarrels] =
+        await Promise.all([
+          loadCenterEnemy(scene),
+          createViewWeapon(scene),
+          spawnLevelOilBarrels(scene, levelRuntime),
+        ]);
       viewWeapon = loadedViewWeapon;
+      oilBarrelRoots = spawnedOilBarrels.map((entry) => entry.root);
+      const oilBarrelMeshes = spawnedOilBarrels.flatMap((entry) => entry.meshes);
       laserTracers = createLaserTracerSystem(scene);
       if (disposed || !canvas) {
         return;
@@ -665,6 +676,7 @@ export default function FpsScene(props: FpsSceneProps) {
         ...arenaStructures,
         ...jumpBlocks,
         ...centerEnemyMeshes,
+        ...oilBarrelMeshes,
       ];
       for (const mesh of levelSolidMeshes) {
         mesh.renderingGroupId = WORLD_RENDERING_GROUP;
@@ -1429,6 +1441,16 @@ export default function FpsScene(props: FpsSceneProps) {
             playerCollider.position.z,
             collisionBlockedThisFrame,
           );
+        }
+
+        if (!pausedRef.current && oilBarrelRoots.length > 0) {
+          const timeSec = performance.now() / 1000;
+          tickOilBarrelOverlayRoots(oilBarrelRoots, camera, timeSec);
+          sounds?.updateOilBarrelFire(
+            collectOilBarrelFirePositionsFromRoots(oilBarrelRoots),
+          );
+        } else if (oilBarrelRoots.length > 0) {
+          sounds?.stopOilBarrelFire();
         }
 
         scene.render();

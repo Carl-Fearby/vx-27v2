@@ -1,0 +1,43 @@
+{
+  "packageId": "oil-barrel-fire",
+  "description": "Runtime fire overlay for open oil barrels — interior video flame + flicker lights (not baked into GLB).",
+  "targetModel": "oil-barrel",
+  "source": "Ported from GameEngine2 OilBarrelInteriorVideo + OilBarrelFireLight",
+  "overlays": [
+    {
+      "id": "interiorFire",
+      "type": "oilBarrelFire",
+      "attachToNode": "oil_barrel",
+      "dimensions": {
+        "innerRadius": 0.267,
+        "floorY": -0.3905,
+        "clipTopY": 0.3795,
+        "innerWallHeight": 0.787
+      },
+      "video": {
+        "color": "/textures/oil_barrel/inside/oil_can_interior_color.mp4?v=fire-alpha-looped",
+        "alpha": "/textures/oil_barrel/inside/oil_can_interior_alpha.mp4?v=fire-alpha-looped",
+        "aspect": 1.7763157894736842,
+        "floorLift": 0.04,
+        "clipRadiusFactor": 0.96,
+        "topFadeStart": 0.48,
+        "topFadeEnd": 0.9
+      },
+      "tuning": {
+        "interiorFire": true,
+        "interiorVideoWidthScale": 1.9,
+        "interiorVideoHeightScale": 2,
+        "interiorVideoCenterOffsetX": -0.195,
+        "interiorVideoCenterOffsetY": 0.185,
+        "interiorFireOffsetX": 0.185,
+        "interiorFlameTexBottom": 0.15,
+        "interiorFlameTexTop": 0.92,
+        "interiorFireLightIntensity": 7,
+        "interiorFireLightLeftX": -0.042,
+        "interiorFireLightRightX": 0.042,
+        "interiorFireLightLeftY": 0,
+        "interiorFireLightRightY": 0
+      }
+    }
+  ]
+}
