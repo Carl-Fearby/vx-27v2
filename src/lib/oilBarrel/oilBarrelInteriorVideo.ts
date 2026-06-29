@@ -88,6 +88,63 @@ void main(void) {
 let loadPromise: Promise<void> | null = null;
 let colorVideoTexture: VideoTexture | null = null;
 let alphaVideoTexture: VideoTexture | null = null;
+let cachedScene: Scene | null = null;
+
+export function resetOilBarrelInteriorVideoCache(): void {
+  if (colorVideoTexture) {
+    try {
+      colorVideoTexture.dispose();
+    } catch {
+      /* scene may already be disposed */
+    }
+    colorVideoTexture = null;
+  }
+  if (alphaVideoTexture) {
+    try {
+      alphaVideoTexture.dispose();
+    } catch {
+      /* scene may already be disposed */
+    }
+    alphaVideoTexture = null;
+  }
+  loadPromise = null;
+  cachedScene = null;
+}
+
+function interiorVideoCacheMatchesScene(scene: Scene): boolean {
+  return (
+    cachedScene === scene &&
+    !scene.isDisposed &&
+    videoTextureIsLive(colorVideoTexture) &&
+    videoTextureIsLive(alphaVideoTexture)
+  );
+}
+
+function videoTextureIsLive(texture: VideoTexture | null): boolean {
+  if (!texture) {
+    return false;
+  }
+  try {
+    return !texture.isDisposed && texture.getInternalTexture() != null;
+  } catch {
+    return false;
+  }
+}
+
+export function resumeOilBarrelInteriorVideoPlayback(): void {
+  for (const texture of [colorVideoTexture, alphaVideoTexture]) {
+    if (!videoTextureIsLive(texture)) {
+      continue;
+    }
+    const video = texture?.video as HTMLVideoElement | undefined;
+    if (!video) {
+      continue;
+    }
+    if (video.paused || video.ended) {
+      void video.play().catch(() => {});
+    }
+  }
+}
 
 function makeLoopingVideo(url: string): HTMLVideoElement {
   const video = document.createElement("video");
@@ -130,12 +187,26 @@ export async function ensureOilBarrelInteriorVideo(
   scene: Scene,
   videoConfig: OilBarrelFireVideoConfig,
 ): Promise<void> {
-  if (colorVideoTexture && alphaVideoTexture) {
+  if (scene.isDisposed) {
     return;
   }
+  if (interiorVideoCacheMatchesScene(scene)) {
+    resumeOilBarrelInteriorVideoPlayback();
+    return;
+  }
+
+  resetOilBarrelInteriorVideoCache();
+  cachedScene = scene;
+
   if (loadPromise) {
     await loadPromise;
-    return;
+    if (interiorVideoCacheMatchesScene(scene)) {
+      resumeOilBarrelInteriorVideoPlayback();
+      return;
+    }
+    if (cachedScene !== scene || scene.isDisposed) {
+      return;
+    }
   }
 
   loadPromise = (async () => {
@@ -143,6 +214,10 @@ export async function ensureOilBarrelInteriorVideo(
       const colorVideo = makeLoopingVideo(videoConfig.color);
       const alphaVideo = makeLoopingVideo(videoConfig.alpha);
       await Promise.all([waitForVideo(colorVideo), waitForVideo(alphaVideo)]);
+
+      if (scene.isDisposed || cachedScene !== scene) {
+        return;
+      }
 
       // invertY=true matches Three.js VideoTexture (GE2 default).
       colorVideoTexture = new VideoTexture(
@@ -169,14 +244,15 @@ export async function ensureOilBarrelInteriorVideo(
       colorVideo.play().catch(() => {});
       alphaVideo.play().catch(() => {});
     } catch (error) {
-      loadPromise = null;
-      colorVideoTexture = null;
-      alphaVideoTexture = null;
+      resetOilBarrelInteriorVideoCache();
       throw error;
+    } finally {
+      loadPromise = null;
     }
   })();
 
   await loadPromise;
+  resumeOilBarrelInteriorVideoPlayback();
 }
 
 function createInteriorVideoMaterial(
@@ -185,10 +261,11 @@ function createInteriorVideoMaterial(
   innerRadius: number,
   clipTopY: number,
   tuning: OilBarrelFireTuning,
+  materialSuffix: string,
 ): ShaderMaterial {
   const { sampleV0, sampleV1 } = normalizeFlameTexVRange(tuning);
   const material = new ShaderMaterial(
-    "oilBarrelInteriorVideoMat",
+    `oilBarrelInteriorVideoMat_${materialSuffix}`,
     scene,
     { vertex: INTERIOR_VIDEO_SHADER, fragment: INTERIOR_VIDEO_SHADER },
     {
@@ -254,6 +331,7 @@ export async function createOilBarrelInteriorVideoMesh(
   }
 
   await ensureOilBarrelInteriorVideo(scene, videoConfig);
+  resumeOilBarrelInteriorVideoPlayback();
 
   const layout = computeInteriorFlameLayout(
     innerRadius,
@@ -282,9 +360,11 @@ export async function createOilBarrelInteriorVideoMesh(
     innerRadius,
     clipTopY,
     tuning,
+    `${parent.uniqueId}-${Date.now()}`,
   );
   mesh.material = material;
   await material.forceCompilationAsync(mesh);
+  resumeOilBarrelInteriorVideoPlayback();
 
   mesh.metadata = {
     ...mesh.metadata,

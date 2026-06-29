@@ -52,6 +52,10 @@ import {
   getOilBarrelFireTuning,
   tickModelOverlays,
 } from "@/lib/oilBarrel/attachModelOverlays";
+import {
+  resetOilBarrelInteriorVideoCache,
+  resumeOilBarrelInteriorVideoPlayback,
+} from "@/lib/oilBarrel/oilBarrelInteriorVideo";
 import { isOilBarrelModelPath } from "@/lib/oilBarrel/oilBarrelAssets";
 import {
   getDefaultOilBarrelEditorFireTuning,
@@ -104,6 +108,7 @@ import {
 } from "@/lib/objectEditor/userCatalog";
 import {
   applyObjectEditorViewModes,
+  clearObjectEditorMaterialSnapshots,
   type ObjectEditorViewModes,
 } from "@/lib/objectEditor/applyViewerModes";
 import {
@@ -228,6 +233,17 @@ function colorFromKelvin(kelvin: number): Color3 {
 }
 
 const OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY = 1000;
+const OBJECT_EDITOR_FRAME_ALPHA = Math.PI * 1.3;
+const OBJECT_EDITOR_FRAME_BETA = Math.PI * 0.38;
+const OBJECT_EDITOR_MODEL_PREFIX = "objectEditor_";
+
+function disposeEditorModelRoots(scene: Scene): void {
+  for (const node of scene.transformNodes.slice()) {
+    if (node.name.startsWith(OBJECT_EDITOR_MODEL_PREFIX)) {
+      node.dispose(false, true);
+    }
+  }
+}
 
 function updateObjectEditorPanSensibility(
   camera: ArcRotateCamera,
@@ -259,20 +275,14 @@ function syncObjectEditorPanSensibility(camera: ArcRotateCamera): void {
   camera.panningSensibility = base * zoomScale;
 }
 
-function frameObject(camera: ArcRotateCamera, root: TransformNode) {
+
+function updateCameraDepthLimits(camera: ArcRotateCamera, root: TransformNode) {
   root.computeWorldMatrix(true);
   const bounds = root.getHierarchyBoundingVectors(true);
   const size = bounds.max.subtract(bounds.min);
-  const center = bounds.min.add(bounds.max).scale(0.5);
   const longestSide = Math.max(size.x, size.y, size.z, 0.001);
-  const nearClip = Math.max(longestSide * 0.0005, 0.00001);
-  camera.setTarget(center);
-  camera.minZ = nearClip;
+  camera.minZ = Math.max(longestSide * 0.0005, 0.00001);
   camera.maxZ = Math.max(longestSide * 1000, 1000);
-  camera.radius = Math.max(longestSide * 2.6, nearClip * 20);
-  camera.lowerRadiusLimit = Math.max(longestSide * 0.03, nearClip * 4);
-  camera.upperRadiusLimit = Math.max(longestSide * 20, 5);
-  updateObjectEditorPanSensibility(camera, longestSide);
 }
 
 function applyViewportMode(camera: ArcRotateCamera, mode: ViewportMode): void {
@@ -702,6 +712,7 @@ export default function ObjectEditor() {
   const sceneRef = useRef<Scene | null>(null);
   const cameraRef = useRef<ArcRotateCamera | null>(null);
   const currentRootRef = useRef<TransformNode | null>(null);
+  const editorLoadSequenceRef = useRef(0);
   const gizmoManagerRef = useRef<GizmoManager | null>(null);
   const gridRef = useRef<LinesMesh | null>(null);
   const selectedSurfaceMeshRef = useRef<Mesh | null>(null);
@@ -826,6 +837,63 @@ export default function ObjectEditor() {
     [refreshDirtyState, refreshHistoryAvailability],
   );
 
+  const commitHistorySnapshotRef = useRef(commitHistorySnapshot);
+  commitHistorySnapshotRef.current = commitHistorySnapshot;
+  const selectSurfaceMeshRef = useRef(selectSurfaceMesh);
+  selectSurfaceMeshRef.current = selectSurfaceMesh;
+  const clearSelectedRegionOutlineRef = useRef(clearSelectedRegionOutline);
+  clearSelectedRegionOutlineRef.current = clearSelectedRegionOutline;
+
+  const resolveEditorDisplayAsset = useCallback(
+    (target: EditorSelection): DisplayAsset | undefined => {
+      if (target.type === "local") {
+        return {
+          id: "local-file",
+          name: target.file.name,
+          category: "Local",
+          type: "glb",
+          path: target.file.name,
+          notes: "Loaded from your machine.",
+        };
+      }
+      return allAssets.find((entry) => entry.id === target.assetId);
+    },
+    [allAssets],
+  );
+
+  const resetEditorForNewModel = useCallback(() => {
+    editorLoadSequenceRef.current += 1;
+    clearSurfaceSelection();
+    setStatus("idle");
+    setViewModes({ wireframe: false, lighting: true, texture: true });
+    setGizmoMode("move");
+    setGizmoEnabled(true);
+    setOilBarrelEditorActive(false);
+    setOilBarrelFireEnabled(loadOilBarrelEditorInteriorFire());
+    setOilBarrelFireTuning(getDefaultOilBarrelEditorFireTuning());
+    setOilBarrelTuningSaveStatus("idle");
+    setOilBarrelTuningSaveMessage("");
+    historyRef.current = { undo: [], redo: [] };
+    baselineSnapshotRef.current = null;
+    setIsDirty(false);
+    refreshHistoryAvailability();
+    currentRootRef.current = null;
+    gizmoManagerRef.current?.attachToNode(null);
+    gizmoManagerRef.current?.attachToMesh(null);
+  }, [clearSurfaceSelection, refreshHistoryAvailability]);
+
+  const queueEditorAssetSelection = useCallback(
+    (nextSelection: EditorSelection) => {
+      const nextAsset = resolveEditorDisplayAsset(nextSelection);
+      if (!nextAsset) {
+        return;
+      }
+      resetEditorForNewModel();
+      setSelection(nextSelection);
+    },
+    [resetEditorForNewModel, resolveEditorDisplayAsset],
+  );
+
   const undoEditorHistory = useCallback(() => {
     const previous = historyRef.current.undo.pop();
     const current = captureObjectEditorSnapshot(currentRootRef.current);
@@ -897,8 +965,8 @@ export default function ObjectEditor() {
 
     const camera = new ArcRotateCamera(
       "objectEditorCamera",
-      Math.PI * 1.3,
-      Math.PI * 0.38,
+      OBJECT_EDITOR_FRAME_ALPHA,
+      OBJECT_EDITOR_FRAME_BETA,
       4,
       Vector3.Zero(),
       scene,
@@ -912,9 +980,7 @@ export default function ObjectEditor() {
     camera.maxZ = 1000;
     camera.wheelDeltaPercentage = 0.015;
     camera.panningSensibility = OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY;
-    viewportModeRef.current = "rotate";
-    setViewportMode("rotate");
-    applyViewportMode(camera, "rotate");
+    applyViewportMode(camera, viewportModeRef.current);
     setSceneReadyGeneration((generation) => generation + 1);
     const panSyncObserver = camera.onAfterCheckInputsObservable.add(() => {
       syncObjectEditorPanSensibility(camera);
@@ -978,18 +1044,40 @@ export default function ObjectEditor() {
     grid.color = new Color3(0.18, 0.42, 0.68);
     grid.alpha = 0.42;
     grid.isPickable = false;
+    grid.isVisible = gridVisible;
     gridRef.current = grid;
 
     let lastSurfaceSyncMs = 0;
     let wasGizmoDragging = false;
     let gizmoDragSnapshot: ObjectEditorHistorySnapshot | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      pointerDownRef.current = { x: event.clientX, y: event.clientY };
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const start = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) {
+        return;
+      }
+      const pick = scene.pick(scene.pointerX, scene.pointerY, (candidate) => {
+        if (!(candidate instanceof Mesh) || !candidate.isPickable) {
+          return false;
+        }
+        return Boolean(currentRootRef.current?.getChildMeshes(false).includes(candidate));
+      });
+      if (pick?.hit && pick.pickedMesh instanceof Mesh) {
+        selectSurfaceMeshRef.current(pick.pickedMesh, pick.faceId);
+      }
+    };
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointerup", onPointerUp);
     engine.runRenderLoop(() => {
       const isGizmoDragging = gizmoManager.isDragging;
       if (isGizmoDragging && !wasGizmoDragging) {
         gizmoDragSnapshot = captureObjectEditorSnapshot(currentRootRef.current);
       }
       if (!isGizmoDragging && wasGizmoDragging) {
-        commitHistorySnapshot(gizmoDragSnapshot);
+        commitHistorySnapshotRef.current(gizmoDragSnapshot);
         gizmoDragSnapshot = null;
       }
       wasGizmoDragging = isGizmoDragging;
@@ -1017,27 +1105,6 @@ export default function ObjectEditor() {
 
     const resize = () => engine.resize();
     window.addEventListener("resize", resize);
-    const onPointerDown = (event: PointerEvent) => {
-      pointerDownRef.current = { x: event.clientX, y: event.clientY };
-    };
-    const onPointerUp = (event: PointerEvent) => {
-      const start = pointerDownRef.current;
-      pointerDownRef.current = null;
-      if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) {
-        return;
-      }
-      const pick = scene.pick(scene.pointerX, scene.pointerY, (candidate) => {
-        if (!(candidate instanceof Mesh) || !candidate.isPickable) {
-          return false;
-        }
-        return Boolean(currentRootRef.current?.getChildMeshes(false).includes(candidate));
-      });
-      if (pick?.hit && pick.pickedMesh instanceof Mesh) {
-        selectSurfaceMesh(pick.pickedMesh, pick.faceId);
-      }
-    };
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointerup", onPointerUp);
     const resizeObserver = new ResizeObserver(() => {
       engine.resize();
     });
@@ -1045,26 +1112,143 @@ export default function ObjectEditor() {
     resize();
 
     return () => {
-      window.removeEventListener("resize", resize);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("resize", resize);
       resizeObserver.disconnect();
+      editorLoadSequenceRef.current += 1;
+      camera.detachControl();
+      engine.stopRenderLoop();
       camera.onAfterCheckInputsObservable.remove(panSyncObserver);
-      currentRootRef.current?.dispose(false, true);
-      clearSelectedRegionOutline();
+      disposeEditorModelRoots(scene);
+      clearSelectedRegionOutlineRef.current();
       gizmoManager.dispose();
       scene.dispose();
       engine.dispose();
+      resetOilBarrelInteriorVideoCache();
       sceneRef.current = null;
       cameraRef.current = null;
       currentRootRef.current = null;
       gizmoManagerRef.current = null;
       gridRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!scene || !camera || !displayAsset || !selection) {
+      return undefined;
+    }
+
+    editorLoadSequenceRef.current += 1;
+    const loadId = editorLoadSequenceRef.current;
+    let cancelled = false;
+    const isLoadCurrent = () =>
+      !cancelled &&
+      !scene.isDisposed &&
+      loadId === editorLoadSequenceRef.current;
+
+    disposeEditorModelRoots(scene);
+    currentRootRef.current = null;
+    gizmoManagerRef.current?.attachToNode(null);
+
+    const abandonLoad = (root: TransformNode) => {
+      root.dispose(false, true);
+    };
+
+    const loadAsset = async () => {
+      let root: TransformNode | null = null;
+      try {
+        await Promise.resolve();
+        if (!isLoadCurrent()) {
+          return;
+        }
+        setStatus("loading");
+        setSelectedSurface(null);
+        refreshHistoryAvailability();
+        const rootName = `objectEditor_${displayAsset.id}`;
+        const loaded =
+          selection.type === "local"
+            ? await loadGltfModelFromFile(scene, selection.file, rootName)
+            : await loadGltfModel(scene, displayAsset.path, rootName, loadId);
+        root = loaded.root;
+        if (!isLoadCurrent()) {
+          abandonLoad(root);
+          return;
+        }
+
+        configureMeshes(root);
+        const isOilBarrel = isOilBarrelModelPath(displayAsset.path);
+        setOilBarrelEditorActive(isOilBarrel);
+
+        if (isOilBarrel) {
+          const fireEnabled = loadOilBarrelEditorInteriorFire();
+          setOilBarrelFireEnabled(fireEnabled);
+          try {
+            await applyOilBarrelInteriorFireSetting(
+              scene,
+              root,
+              displayAsset.path,
+              fireEnabled,
+            );
+            if (!isLoadCurrent()) {
+              abandonLoad(root);
+              return;
+            }
+            const editorTuning = mergeOilBarrelEditorFireTuning(
+              getOilBarrelFireTuning(root) ?? getDefaultOilBarrelEditorFireTuning(),
+              loadOilBarrelEditorFireTuningPatch(),
+            );
+            applyOilBarrelFireTuning(root, editorTuning);
+            setOilBarrelFireTuning(editorTuning);
+            resumeOilBarrelInteriorVideoPlayback();
+          } catch {
+            // GLB still loads if fire videos fail — user can retry via the toggle.
+          }
+        } else {
+          const overlayModelPath =
+            selection.type === "catalog" ? displayAsset.path : null;
+          if (overlayModelPath) {
+            await attachModelOverlays(scene, root, overlayModelPath);
+          }
+        }
+
+        if (!isLoadCurrent()) {
+          abandonLoad(root);
+          return;
+        }
+
+        const committedRoot = root;
+        currentRootRef.current = committedRoot;
+        clearObjectEditorMaterialSnapshots(committedRoot);
+        applyObjectEditorViewModes(committedRoot, viewModesRef.current);
+        updateCameraDepthLimits(camera, committedRoot);
+        baselineSnapshotRef.current = captureObjectEditorSnapshot(committedRoot);
+        refreshHistoryAvailability();
+        refreshDirtyState();
+        setStatus("ready");
+      } catch {
+        if (root) {
+          abandonLoad(root);
+        }
+        if (isLoadCurrent()) {
+          setStatus("error");
+        }
+      }
+    };
+
+    void loadAsset();
+
+    return () => {
+      cancelled = true;
+      editorLoadSequenceRef.current += 1;
+    };
   }, [
-    commitHistorySnapshot,
-    clearSelectedRegionOutline,
-    selectSurfaceMesh,
+    selection,
+    displayAsset,
+    refreshDirtyState,
+    refreshHistoryAvailability,
   ]);
 
   useEffect(() => {
@@ -1096,108 +1280,7 @@ export default function ObjectEditor() {
     if (shouldShow) {
       gizmoManager.attachToNode(currentRootRef.current);
     }
-  }, [gizmoEnabled, gizmoMode, status]);
-
-  useEffect(() => {
-    const scene = sceneRef.current;
-    const camera = cameraRef.current;
-    if (!scene || !camera || !displayAsset) return undefined;
-    const activeSelection = selection;
-    if (!activeSelection) return undefined;
-
-    let cancelled = false;
-    historyRef.current = { undo: [], redo: [] };
-    baselineSnapshotRef.current = null;
-    setIsDirty(false);
-    gizmoManagerRef.current?.attachToNode(null);
-    clearSelectedRegionOutline();
-    selectedSurfaceMeshRef.current = null;
-    selectedFaceIdRef.current = -1;
-    selectedRegionMeshesRef.current = [];
-    currentRootRef.current?.dispose(false, true);
-    currentRootRef.current = null;
-    setOilBarrelEditorActive(false);
-    setOilBarrelTuningSaveStatus("idle");
-    setOilBarrelTuningSaveMessage("");
-
-    const load = async () => {
-      try {
-        await Promise.resolve();
-        if (cancelled) {
-          return;
-        }
-        setStatus("loading");
-        setSelectedSurface(null);
-        refreshHistoryAvailability();
-        const rootName = `objectEditor_${displayAsset.id}`;
-        const { root } =
-          activeSelection.type === "local"
-            ? await loadGltfModelFromFile(
-                scene,
-                activeSelection.file,
-                rootName,
-              )
-            : await loadGltfModel(scene, displayAsset.path, rootName);
-        if (cancelled) {
-          root.dispose(false, true);
-          return;
-        }
-
-        configureMeshes(root);
-        const isOilBarrel = isOilBarrelModelPath(displayAsset.path);
-        setOilBarrelEditorActive(isOilBarrel);
-
-        if (isOilBarrel) {
-          const fireEnabled = loadOilBarrelEditorInteriorFire();
-          setOilBarrelFireEnabled(fireEnabled);
-          try {
-            await applyOilBarrelInteriorFireSetting(
-              scene,
-              root,
-              displayAsset.path,
-              fireEnabled,
-            );
-            const editorTuning = mergeOilBarrelEditorFireTuning(
-              getOilBarrelFireTuning(root) ?? getDefaultOilBarrelEditorFireTuning(),
-              loadOilBarrelEditorFireTuningPatch(),
-            );
-            applyOilBarrelFireTuning(root, editorTuning);
-            setOilBarrelFireTuning(editorTuning);
-          } catch {
-            // GLB still loads if fire videos fail — user can retry via the toggle.
-          }
-        } else {
-          const overlayModelPath =
-            activeSelection.type === "catalog" ? displayAsset.path : null;
-          if (overlayModelPath) {
-            await attachModelOverlays(scene, root, overlayModelPath);
-          }
-        }
-
-        currentRootRef.current = root;
-        applyObjectEditorViewModes(root, viewModesRef.current);
-        frameObject(camera, root);
-        baselineSnapshotRef.current = captureObjectEditorSnapshot(root);
-        refreshHistoryAvailability();
-        refreshDirtyState();
-        setStatus("ready");
-      } catch {
-        setStatus("error");
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    clearSelectedRegionOutline,
-    refreshDirtyState,
-    refreshHistoryAvailability,
-    selection,
-    displayAsset,
-  ]);
+  }, [gizmoEnabled, gizmoMode, status, sceneReadyGeneration]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1308,7 +1391,7 @@ export default function ObjectEditor() {
       }
       return next;
     });
-    setSelection({ type: "catalog", assetId });
+    queueEditorAssetSelection({ type: "catalog", assetId });
   };
 
   const toggleFolder = (folderId: string) => {
@@ -1340,11 +1423,11 @@ export default function ObjectEditor() {
     setSaveStatus("idle");
     setSaveMessage("");
     setExpandedFolderIds((current) => new Set(current).add("local"));
-    setSelection((current) => ({
+    queueEditorAssetSelection({
       type: "local",
       file,
-      loadKey: current?.type === "local" ? current.loadKey + 1 : 0,
-    }));
+      loadKey: selection?.type === "local" ? selection.loadKey + 1 : 0,
+    });
   };
 
   const handleSaveToServer = async () => {

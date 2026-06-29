@@ -16,6 +16,7 @@ import {
   collectOilBarrelInteriorVideoMeshes,
   createOilBarrelInteriorVideoMesh,
   refreshOilBarrelInteriorVideoLayout,
+  resumeOilBarrelInteriorVideoPlayback,
   tickOilBarrelInteriorVideo,
 } from "@/lib/oilBarrel/oilBarrelInteriorVideo";
 import {
@@ -235,6 +236,9 @@ export async function applyOilBarrelInteriorFireSetting(
   }
   if (modelHasOilBarrelFireOverlay(modelRoot)) {
     setOilBarrelInteriorFire(modelRoot, enabled);
+    if (enabled) {
+      resumeOilBarrelInteriorVideoPlayback();
+    }
   }
   return true;
 }

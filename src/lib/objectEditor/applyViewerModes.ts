@@ -31,6 +31,24 @@ type MaterialSnapshot = {
 
 const materialSnapshots = new WeakMap<Material, MaterialSnapshot>();
 
+export function clearObjectEditorMaterialSnapshots(root: TransformNode): void {
+  for (const mesh of root.getChildMeshes(false)) {
+    if (!(mesh instanceof Mesh) || !mesh.material) {
+      continue;
+    }
+    const material = mesh.material;
+    if (material instanceof MultiMaterial) {
+      for (const subMaterial of material.subMaterials) {
+        if (subMaterial) {
+          materialSnapshots.delete(subMaterial);
+        }
+      }
+      continue;
+    }
+    materialSnapshots.delete(material);
+  }
+}
+
 function snapshotMaterial(material: Material): MaterialSnapshot {
   const existing = materialSnapshots.get(material);
   if (existing) {
