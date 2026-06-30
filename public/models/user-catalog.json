@@ -62,8 +62,14 @@
     "type": "glb",
     "path": "/models/assets/vx27-container.glb",
     "notes": "Saved from object editor.",
+    "animationToggles": {
+      "front-left": false,
+      "front-right": true,
+      "back-left": false,
+      "back-right": true
+    },
     "folder": "assets",
     "modelName": "vx27-container",
-    "savedAt": "2026-06-29T23:53:50.133Z"
+    "savedAt": "2026-06-30T01:35:15.330Z"
   }
 ]

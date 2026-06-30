@@ -3,6 +3,7 @@ import {
   Mesh,
   Scene,
   TransformNode,
+  type AnimationGroup,
 } from "@babylonjs/core";
 import { ImportMeshAsync } from "@babylonjs/core/Loading/sceneLoader";
 import "@babylonjs/loaders/glTF";
@@ -13,6 +14,7 @@ export type GltfLoadResult = {
   /** Loader `__root__` node — keeps glTF right→left conversion (do not strip). */
   gltfRoot: TransformNode;
   meshes: AbstractMesh[];
+  animationGroups: AnimationGroup[];
 };
 
 function wrapGltfImport(
@@ -28,7 +30,7 @@ function wrapGltfImport(
 
   const meshes = result.meshes.filter((mesh) => mesh !== gltfRoot);
 
-  return { root, gltfRoot, meshes };
+  return { root, gltfRoot, meshes, animationGroups: result.animationGroups };
 }
 
 export function gltfModelLoadUrl(

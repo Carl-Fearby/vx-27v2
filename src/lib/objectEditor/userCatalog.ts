@@ -1,4 +1,5 @@
 import type { ObjectEditorAsset } from "@/lib/objectEditor/catalog";
+import type { ObjectEditorAnimationToggleStates } from "@/lib/objectEditor/catalog";
 import {
   DEFAULT_MODEL_LIBRARY_FOLDER,
   MODEL_LIBRARY_FOLDERS,
@@ -16,6 +17,7 @@ export type SaveModelToServerInput = {
   modelName: string;
   displayName?: string;
   category?: string;
+  animationToggles?: ObjectEditorAnimationToggleStates;
 };
 
 export type SaveModelToServerResult = {
@@ -85,6 +87,9 @@ export async function saveModelToServer(
     "category",
     input.category?.trim() || titleCaseSegment(segments.folder),
   );
+  if (input.animationToggles) {
+    formData.append("animationToggles", JSON.stringify(input.animationToggles));
+  }
 
   const response = await fetch("/api/models", {
     method: "POST",

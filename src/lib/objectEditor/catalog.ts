@@ -8,6 +8,8 @@ export const DEFAULT_MODEL_LIBRARY_FOLDER = "assets";
 
 export type ObjectEditorAssetType = "glb";
 
+export type ObjectEditorAnimationToggleStates = Record<string, boolean>;
+
 export type ObjectEditorAsset = {
   id: string;
   name: string;
@@ -15,6 +17,7 @@ export type ObjectEditorAsset = {
   type: ObjectEditorAssetType;
   path: string;
   notes?: string;
+  animationToggles?: ObjectEditorAnimationToggleStates;
   /** Set for user-catalog models — used to bust browser cache after save. */
   savedAt?: string;
 };

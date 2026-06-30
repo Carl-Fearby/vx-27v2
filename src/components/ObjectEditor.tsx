@@ -136,6 +136,13 @@ import {
   createViewportAxisLegendState,
   type ViewportAxisLegendState,
 } from "@/lib/objectEditor/viewportAxisLegend";
+import {
+  detectModelToggleControls,
+  setModelToggleOpen,
+  snapModelToggleOpen,
+  type ModelToggleControl,
+  type ModelToggleId,
+} from "@/lib/objectEditor/containerDoorAnimations";
 import ObjectEditorAxisLegend from "@/components/objectEditor/ObjectEditorAxisLegend";
 import ViewportRulerMark from "@/components/objectEditor/ViewportRulerMark";
 import ObjectEditorTree from "@/components/objectEditor/ObjectEditorTree";
@@ -156,6 +163,7 @@ type DisplayAsset = {
   type: "glb";
   path: string;
   notes?: string;
+  animationToggles?: ObjectEditorAsset["animationToggles"];
 };
 
 type EditableMaterialKind = "pbr" | "standard" | "unsupported";
@@ -223,6 +231,8 @@ type ObjectEditorHistorySnapshot = {
   root: TransformSnapshot;
   meshes: MeshHistorySnapshot[];
 };
+
+type ModelToggleStateMap = Record<string, boolean>;
 
 const objectEditorMaterialClones = new WeakSet<Material>();
 
@@ -596,6 +606,19 @@ function snapshotsMatch(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function modelToggleStatesMatch(
+  left: ModelToggleStateMap | undefined,
+  right: ModelToggleStateMap | undefined,
+): boolean {
+  const leftEntries = Object.entries(left ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const rightEntries = Object.entries(right ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return JSON.stringify(leftEntries) === JSON.stringify(rightEntries);
+}
+
 function folderIdsForAssetPath(assetPath: string): string[] {
   const match = /^\/models\/(.+)\/[^/]+\.glb$/i.exec(assetPath);
   if (!match) {
@@ -831,6 +854,15 @@ export default function ObjectEditor() {
   const [oilBarrelFireTuning, setOilBarrelFireTuning] = useState(
     getDefaultOilBarrelEditorFireTuning,
   );
+  const [modelToggleControls, setModelToggleControls] = useState<
+    ModelToggleControl[]
+  >([]);
+  const [modelToggleStates, setModelToggleStates] = useState<
+    Partial<Record<ModelToggleId, boolean>>
+  >({});
+  const modelToggleControlsRef = useRef<ModelToggleControl[]>([]);
+  const modelToggleStatesRef = useRef<ModelToggleStateMap>({});
+  const baselineModelToggleStatesRef = useRef<ModelToggleStateMap>({});
   const [oilBarrelTuningSaveStatus, setOilBarrelTuningSaveStatus] =
     useState<SaveStatus>("idle");
   const [oilBarrelTuningSaveMessage, setOilBarrelTuningSaveMessage] = useState("");
@@ -957,8 +989,12 @@ export default function ObjectEditor() {
   const refreshDirtyState = useCallback(() => {
     const current = captureObjectEditorSnapshot(currentRootRef.current);
     const baseline = baselineSnapshotRef.current;
+    const togglesDirty = !modelToggleStatesMatch(
+      modelToggleStatesRef.current,
+      baselineModelToggleStatesRef.current,
+    );
     setIsDirty(
-      Boolean(current && baseline && !snapshotsMatch(current, baseline)),
+      Boolean(current && baseline && (!snapshotsMatch(current, baseline) || togglesDirty)),
     );
   }, []);
 
@@ -1041,6 +1077,11 @@ export default function ObjectEditor() {
     setOilBarrelEditorActive(false);
     setOilBarrelFireEnabled(loadOilBarrelEditorInteriorFire());
     setOilBarrelFireTuning(getDefaultOilBarrelEditorFireTuning());
+    setModelToggleControls([]);
+    setModelToggleStates({});
+    modelToggleControlsRef.current = [];
+    modelToggleStatesRef.current = {};
+    baselineModelToggleStatesRef.current = {};
     setOilBarrelTuningSaveStatus("idle");
     setOilBarrelTuningSaveMessage("");
     historyRef.current = { undo: [], redo: [] };
@@ -1395,6 +1436,11 @@ export default function ObjectEditor() {
 
     clearDimensionGuides();
     disposeEditorModelRoots(scene);
+    setModelToggleControls([]);
+    setModelToggleStates({});
+    modelToggleControlsRef.current = [];
+    modelToggleStatesRef.current = {};
+    baselineModelToggleStatesRef.current = {};
     currentRootRef.current = null;
     gizmoManagerRef.current?.attachToNode(null);
 
@@ -1468,6 +1514,29 @@ export default function ObjectEditor() {
         currentRootRef.current = committedRoot;
         clearObjectEditorMaterialSnapshots(committedRoot);
         applyObjectEditorViewModes(committedRoot, viewModesRef.current);
+        const toggleControls = detectModelToggleControls(
+          committedRoot,
+          loaded.animationGroups,
+        );
+        const savedToggleStates = displayAsset.animationToggles ?? {};
+        const nextToggleStates = Object.fromEntries(
+          toggleControls.map((control) => [
+            control.id,
+            Boolean(savedToggleStates[control.id]),
+          ]),
+        );
+        for (const control of toggleControls) {
+          snapModelToggleOpen(
+            committedRoot,
+            control.id,
+            Boolean(savedToggleStates[control.id]),
+          );
+        }
+        modelToggleControlsRef.current = toggleControls;
+        modelToggleStatesRef.current = nextToggleStates;
+        baselineModelToggleStatesRef.current = nextToggleStates;
+        setModelToggleControls(toggleControls);
+        setModelToggleStates(nextToggleStates);
         frameObjectInCamera(camera, committedRoot, canvasRef.current);
         refreshObjectMeasurementsRef.current();
         requestAnimationFrame(() => {
@@ -1649,6 +1718,31 @@ export default function ObjectEditor() {
     commitHistorySnapshot(before);
   };
 
+  const updateModelToggleState = (toggleId: ModelToggleId, open: boolean) => {
+    const root = currentRootRef.current;
+    if (!root || status !== "ready") {
+      return;
+    }
+    if (!setModelToggleOpen(root, toggleId, open)) {
+      return;
+    }
+    const next: ModelToggleStateMap = {
+      ...modelToggleStatesRef.current,
+      [toggleId]: open,
+    };
+    modelToggleStatesRef.current = next;
+    setModelToggleStates(next);
+    refreshDirtyState();
+  };
+
+  const currentModelToggleSaveState = () => {
+    const entries = modelToggleControlsRef.current.map((control) => [
+      control.id,
+      Boolean(modelToggleStatesRef.current[control.id]),
+    ]);
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  };
+
   const selectCatalogAsset = (assetId: string) => {
     setExpandedFolderIds((current) => {
       const next = new Set(current);
@@ -1709,6 +1803,7 @@ export default function ObjectEditor() {
         modelName: saveModelName,
         displayName: saveDisplayName,
         category: titleCaseSegment(saveFolder),
+        animationToggles: currentModelToggleSaveState(),
       });
       setUserAssets((current) => {
         const next = current.filter((asset) => asset.id !== result.asset.id);
@@ -1784,6 +1879,7 @@ export default function ObjectEditor() {
         modelName,
         displayName,
         category,
+        animationToggles: currentModelToggleSaveState(),
       });
 
       setUserAssets((current) => {
@@ -1800,6 +1896,7 @@ export default function ObjectEditor() {
       });
 
       baselineSnapshotRef.current = captureObjectEditorSnapshot(root);
+      baselineModelToggleStatesRef.current = { ...modelToggleStatesRef.current };
       refreshDirtyState();
 
       if (selection.type === "local") {
@@ -1836,6 +1933,15 @@ export default function ObjectEditor() {
 
     applyObjectEditorSnapshot(root, baseline);
     applyObjectEditorViewModes(root, viewModesRef.current);
+    for (const control of modelToggleControlsRef.current) {
+      snapModelToggleOpen(
+        root,
+        control.id,
+        Boolean(baselineModelToggleStatesRef.current[control.id]),
+      );
+    }
+    modelToggleStatesRef.current = { ...baselineModelToggleStatesRef.current };
+    setModelToggleStates(modelToggleStatesRef.current);
     historyRef.current = { undo: [], redo: [] };
     refreshSelectedSurface();
     refreshObjectMeasurements();
@@ -2324,6 +2430,34 @@ export default function ObjectEditor() {
           </dl>
           <p className="object-editor-save-hint">Scene units: 1 unit = 1 meter.</p>
         </section>
+
+        {modelToggleControls.length > 0 ? (
+          <section className="object-editor-tool-section">
+            <h3>Animation toggles</h3>
+            <p className="object-editor-save-hint">
+              Toggle controls are detected from GLB animation groups and moving parts.
+            </p>
+            {modelToggleControls.map((control) => (
+              <label
+                key={control.id}
+                className="object-editor-control object-editor-control--inline"
+              >
+                <span>{control.label}</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(modelToggleStates[control.id])}
+                  disabled={status !== "ready"}
+                  onChange={(event) => {
+                    updateModelToggleState(
+                      control.id,
+                      event.currentTarget.checked,
+                    );
+                  }}
+                />
+              </label>
+            ))}
+          </section>
+        ) : null}
 
         {oilBarrelEditorActive ? (
           <section className="object-editor-tool-section">

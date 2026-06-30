@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   DEFAULT_MODEL_LIBRARY_FOLDER,
   MODEL_LIBRARY_FOLDERS,
+  type ObjectEditorAnimationToggleStates,
   type ObjectEditorAsset,
 } from "@/lib/objectEditor/catalog";
 import {
@@ -64,8 +65,31 @@ function toPublicAsset(entry: StoredCatalogEntry): ObjectEditorAsset {
     type: "glb",
     path: entry.path,
     notes: entry.notes,
+    animationToggles: entry.animationToggles,
     savedAt: entry.savedAt,
   };
+}
+
+function parseAnimationToggles(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const toggles: ObjectEditorAnimationToggleStates = {};
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (typeof key === "string" && key.length <= 120 && typeof entry === "boolean") {
+        toggles[key] = entry;
+      }
+    }
+    return Object.keys(toggles).length > 0 ? toggles : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function scanModelFolderPaths(relativeDir = ""): Promise<string[]> {
@@ -149,6 +173,7 @@ export async function POST(request: NextRequest) {
 
   const displayNameValue = formData.get("displayName");
   const categoryValue = formData.get("category");
+  const animationToggles = parseAnimationToggles(formData.get("animationToggles"));
   const displayNameRaw =
     typeof displayNameValue === "string" ? displayNameValue.trim() : "";
   const categoryRaw =
@@ -212,6 +237,7 @@ export async function POST(request: NextRequest) {
     type: "glb",
     path: publicPath,
     notes: "Saved from object editor.",
+    animationToggles,
     folder: segments.folder,
     modelName: segments.modelName,
     savedAt: new Date().toISOString(),
