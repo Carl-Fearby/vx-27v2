@@ -57,11 +57,15 @@ function configureBarrelInteriorMesh(mesh: Mesh, renderingGroupId: number): void
   // Preserve GLB doubleSided interior — BackSide-only culling hides the wall from above.
   material.backFaceCulling = false;
   material.twoSidedLighting = true;
+  if (mesh.name === "oil_interior_bottom") {
+    material.disableDepthWrite = true;
+    material.forceDepthWrite = false;
+  }
 }
 
 function configureFireVideoMesh(mesh: Mesh, renderingGroupId: number): void {
   mesh.renderingGroupId = renderingGroupId;
-  mesh.alphaIndex = 50;
+  mesh.alphaIndex = 5000;
   const material = mesh.material;
   if (!(material instanceof ShaderMaterial)) {
     return;
@@ -69,6 +73,7 @@ function configureFireVideoMesh(mesh: Mesh, renderingGroupId: number): void {
   material.disableDepthWrite = true;
   material.forceDepthWrite = false;
   material.depthFunction = Engine.LEQUAL;
+  material.zOffset = -4;
   material.transparencyMode = Material.MATERIAL_ALPHABLEND;
   material.alphaMode = Engine.ALPHA_PREMULTIPLIED;
   material.needDepthPrePass = false;

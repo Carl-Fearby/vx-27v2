@@ -25,6 +25,10 @@ export type SaveModelToServerResult = {
   overwritten: boolean;
 };
 
+export type DeleteModelFromServerResult = {
+  asset: ObjectEditorAsset;
+};
+
 export type ModelLibraryResponse = {
   assets: ObjectEditorAsset[];
   folders: string[];
@@ -110,6 +114,28 @@ export async function saveModelToServer(
     asset: data.asset,
     overwritten: Boolean(data.overwritten),
   };
+}
+
+export async function deleteModelFromServer(
+  assetId: string,
+  confirmName: string,
+): Promise<DeleteModelFromServerResult> {
+  const response = await fetch("/api/models", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assetId, confirmName }),
+  });
+
+  const data = (await response.json()) as {
+    asset?: ObjectEditorAsset;
+    error?: string;
+  };
+
+  if (!response.ok || !data.asset) {
+    throw new Error(data.error ?? "Failed to delete model.");
+  }
+
+  return { asset: data.asset };
 }
 
 export function normalizeSaveForm(

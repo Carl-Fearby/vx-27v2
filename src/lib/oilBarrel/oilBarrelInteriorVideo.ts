@@ -293,6 +293,7 @@ function createInteriorVideoMaterial(
   material.disableDepthWrite = true;
   material.forceDepthWrite = false;
   material.depthFunction = Engine.LEQUAL;
+  material.zOffset = -4;
   material.fogEnabled = false;
   material.needDepthPrePass = false;
 

@@ -9,6 +9,7 @@ import {
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ArcRotateCamera,
   Color3,
@@ -18,13 +19,17 @@ import {
   HemisphericLight,
   LinesMesh,
   Material,
+  Matrix,
   Mesh,
   MeshBuilder,
   PBRMaterial,
+  Quaternion,
   Scene,
   StandardMaterial,
   TransformNode,
   Vector3,
+  VertexBuffer,
+  VertexData,
 } from "@babylonjs/core";
 import { GizmoManager } from "@babylonjs/core/Gizmos/gizmoManager";
 import "@babylonjs/core/Rendering/outlineRenderer";
@@ -105,6 +110,7 @@ import {
   setFaceUvRotationDeg,
 } from "@/lib/objectEditor/meshFaceUv";
 import {
+  deleteModelFromServer,
   fetchModelLibrary,
   previewSavedAssetPath,
   saveModelToServer,
@@ -170,6 +176,7 @@ type EditableMaterialKind = "pbr" | "standard" | "unsupported";
 
 type SurfaceSelection = {
   meshId: number;
+  faceId: number;
   meshName: string;
   regionMeshCount: number;
   materialName: string;
@@ -179,14 +186,27 @@ type SurfaceSelection = {
   uvOffsetU: number;
   uvOffsetV: number;
   faceUvRotationDeg: number;
+  geometryWidth: number;
+  geometryHeight: number;
+  drawOrder: number;
   alpha: number;
   albedoColor: string;
   emissiveColor: string;
   metallic: number;
   roughness: number;
   unlit: boolean;
+  twoSided: boolean;
+  depthWrite: boolean;
+  forceDepthWrite: boolean;
+  depthTest: boolean;
+  renderBias: number;
   hasEditableTextures: boolean;
   hasEditableFaceUvs: boolean;
+};
+
+type GeometryControlRanges = {
+  width: { min: number; max: number; step: number };
+  height: { min: number; max: number; step: number };
 };
 
 type VectorSnapshot = {
@@ -209,6 +229,11 @@ type MaterialSnapshot = {
   metallic: number;
   roughness: number;
   unlit: boolean;
+  twoSided: boolean;
+  depthWrite: boolean;
+  forceDepthWrite: boolean;
+  depthTest: boolean;
+  renderBias: number;
   uvScaleU: number;
   uvScaleV: number;
   uvOffsetU: number;
@@ -223,6 +248,9 @@ type MeshFaceUvSnapshot = {
 type MeshHistorySnapshot = {
   meshId: number;
   transform: TransformSnapshot;
+  geometryPositions: number[] | null;
+  geometryNormals: number[] | null;
+  drawOrder: number;
   material: MaterialSnapshot | null;
   faceUv: MeshFaceUvSnapshot | null;
 };
@@ -248,6 +276,7 @@ const OBJECT_EDITOR_FRAME_FILL = 0.8;
 const OBJECT_EDITOR_MODEL_PREFIX = "objectEditor_";
 const OBJECT_EDITOR_SCALE_GIZMO_SENSITIVITY = 6;
 const OBJECT_EDITOR_MIN_SCALE = 0.001;
+const OBJECT_EDITOR_VIEWPORT_RULER_SYNC_MS = 40;
 
 function disposeEditorModelRoots(scene: Scene): void {
   for (const node of scene.transformNodes.slice()) {
@@ -262,29 +291,24 @@ function updateObjectEditorPanSensibility(
   objectSize: number,
 ): void {
   const longestSide = Math.max(objectSize, 0.001);
-  const defaultRadius = Math.max(longestSide * 2.6, 0.001);
   camera.metadata = {
     ...camera.metadata,
     objectEditorLongestSide: longestSide,
-    objectEditorDefaultRadius: defaultRadius,
   };
   syncObjectEditorPanSensibility(camera);
 }
 
 function syncObjectEditorPanSensibility(camera: ArcRotateCamera): void {
   const longestSide = camera.metadata?.objectEditorLongestSide;
-  const defaultRadius = camera.metadata?.objectEditorDefaultRadius;
-  if (typeof longestSide !== "number" || typeof defaultRadius !== "number") {
+  if (typeof longestSide !== "number") {
     camera.panningSensibility = OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY;
     return;
   }
 
-  const base = Math.max(OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY, 5000 / longestSide);
-  const zoomScale = Math.max(
-    defaultRadius / Math.max(camera.radius, defaultRadius * 0.01),
-    1,
+  camera.panningSensibility = Math.max(
+    OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY,
+    3500 / longestSide,
   );
-  camera.panningSensibility = base * zoomScale;
 }
 
 function updateCameraDepthLimits(camera: ArcRotateCamera, root: TransformNode) {
@@ -327,9 +351,57 @@ function frameObjectInCamera(
   updateCameraDepthLimits(camera, root);
 }
 
+function setObjectEditorCameraInputMap(
+  camera: ArcRotateCamera,
+  mode: ViewportMode,
+): void {
+  const input = camera.movement?.input as
+    | {
+        inputMap: Array<{
+          source?: string;
+          button?: number;
+          modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean };
+          interaction?: string;
+        }>;
+        addEntry: (entry: {
+          source: string;
+          button?: number;
+          modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean };
+          interaction: string;
+        }) => void;
+      }
+    | undefined;
+  if (!input) {
+    return;
+  }
+
+  input.inputMap = input.inputMap.filter(
+    (entry) =>
+      !(
+        entry.source === "pointer" &&
+        entry.button === 0 &&
+        (entry.interaction === "pan" || entry.interaction === "rotate")
+      ),
+  );
+
+  if (mode === "pan") {
+    input.addEntry({ source: "pointer", button: 0, interaction: "pan" });
+    return;
+  }
+
+  input.addEntry({
+    source: "pointer",
+    button: 0,
+    modifiers: { ctrl: true },
+    interaction: "pan",
+  });
+  input.addEntry({ source: "pointer", button: 0, interaction: "rotate" });
+}
+
 function applyViewportMode(camera: ArcRotateCamera, mode: ViewportMode): void {
   camera.detachControl();
   camera.attachControl(true, false, mode === "pan" ? 0 : 2);
+  setObjectEditorCameraInputMap(camera, mode);
 }
 
 function configureMeshes(root: TransformNode) {
@@ -383,6 +455,404 @@ function materialRegionKey(mesh: Mesh): string {
   );
 }
 
+type GeometryAxis = "x" | "y" | "z";
+type SurfaceGeometryAxes = {
+  widthAxis: GeometryAxis;
+  heightAxis: GeometryAxis;
+};
+
+type LocalGeometryBounds = Record<GeometryAxis, { min: number; max: number; size: number }>;
+
+const AXES: GeometryAxis[] = ["x", "y", "z"];
+
+function axisOffset(axis: GeometryAxis): number {
+  if (axis === "x") return 0;
+  if (axis === "y") return 1;
+  return 2;
+}
+
+function meshPositions(mesh: Mesh): Float32Array | null {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+  return positions ? new Float32Array(positions) : null;
+}
+
+function meshFaceVertexIndices(mesh: Mesh, faceId: number): number[] {
+  const indices = mesh.getIndices();
+  if (!indices || faceId < 0) {
+    return [];
+  }
+  const offset = faceId * 3;
+  if (offset + 2 >= indices.length) {
+    return [];
+  }
+  return [indices[offset], indices[offset + 1], indices[offset + 2]];
+}
+
+function localPositionAt(positions: Float32Array, vertexIndex: number): Vector3 {
+  return new Vector3(
+    positions[vertexIndex * 3],
+    positions[vertexIndex * 3 + 1],
+    positions[vertexIndex * 3 + 2],
+  );
+}
+
+function localAxisVector(axis: GeometryAxis): Vector3 {
+  if (axis === "x") return new Vector3(1, 0, 0);
+  if (axis === "y") return new Vector3(0, 1, 0);
+  return new Vector3(0, 0, 1);
+}
+
+function faceLocalNormal(mesh: Mesh, faceId: number): Vector3 {
+  const positions = meshPositions(mesh);
+  const indices = positions ? meshFaceVertexIndices(mesh, faceId) : [];
+  if (!positions || indices.length !== 3) {
+    return new Vector3(0, 0, 1);
+  }
+  const a = localPositionAt(positions, indices[0]);
+  const b = localPositionAt(positions, indices[1]);
+  const c = localPositionAt(positions, indices[2]);
+  const normal = Vector3.Cross(b.subtract(a), c.subtract(a));
+  if (normal.lengthSquared() <= 1e-8) {
+    return new Vector3(0, 0, 1);
+  }
+  return normal.normalize();
+}
+
+function faceLocalCenter(mesh: Mesh, faceId: number): Vector3 {
+  const positions = meshPositions(mesh);
+  const indices = positions ? meshFaceVertexIndices(mesh, faceId) : [];
+  if (!positions || indices.length !== 3) {
+    return Vector3.Zero();
+  }
+  return localPositionAt(positions, indices[0])
+    .add(localPositionAt(positions, indices[1]))
+    .add(localPositionAt(positions, indices[2]))
+    .scale(1 / 3);
+}
+
+function surfaceLocalCenter(mesh: Mesh, faceId: number): Vector3 {
+  const positions = meshPositions(mesh);
+  const indices = mesh.getIndices();
+  if (!positions || !indices || faceId < 0) {
+    return faceLocalCenter(mesh, faceId);
+  }
+
+  const selectedNormal = faceLocalNormal(mesh, faceId);
+  const selectedCenter = faceLocalCenter(mesh, faceId);
+  const normalAxis = dominantAxisFromNormal(selectedNormal);
+  const planeAxes = AXES.filter((axis) => axis !== normalAxis);
+  if (planeAxes.length !== 2) {
+    return selectedCenter;
+  }
+
+  const allBounds = {
+    x: { min: Infinity, max: -Infinity },
+    y: { min: Infinity, max: -Infinity },
+    z: { min: Infinity, max: -Infinity },
+  };
+  for (let index = 0; index < positions.length; index += 3) {
+    allBounds.x.min = Math.min(allBounds.x.min, positions[index]);
+    allBounds.x.max = Math.max(allBounds.x.max, positions[index]);
+    allBounds.y.min = Math.min(allBounds.y.min, positions[index + 1]);
+    allBounds.y.max = Math.max(allBounds.y.max, positions[index + 1]);
+    allBounds.z.min = Math.min(allBounds.z.min, positions[index + 2]);
+    allBounds.z.max = Math.max(allBounds.z.max, positions[index + 2]);
+  }
+  const meshSpan = Math.max(
+    allBounds.x.max - allBounds.x.min,
+    allBounds.y.max - allBounds.y.min,
+    allBounds.z.max - allBounds.z.min,
+    0.001,
+  );
+  const planeTolerance = Math.max(meshSpan * 0.01, 0.001);
+  const planeBounds = {
+    [planeAxes[0]]: { min: Infinity, max: -Infinity },
+    [planeAxes[1]]: { min: Infinity, max: -Infinity },
+  } as Record<GeometryAxis, { min: number; max: number }>;
+
+  for (let triangle = 0; triangle + 2 < indices.length; triangle += 3) {
+    const a = localPositionAt(positions, indices[triangle]);
+    const b = localPositionAt(positions, indices[triangle + 1]);
+    const c = localPositionAt(positions, indices[triangle + 2]);
+    const normal = Vector3.Cross(b.subtract(a), c.subtract(a));
+    if (normal.lengthSquared() <= 1e-8) {
+      continue;
+    }
+    if (Math.abs(Vector3.Dot(normal.normalize(), selectedNormal)) < 0.98) {
+      continue;
+    }
+    const triangleCenter = a.add(b).add(c).scale(1 / 3);
+    const planeDistance = Math.abs(
+      Vector3.Dot(triangleCenter.subtract(selectedCenter), selectedNormal),
+    );
+    if (planeDistance > planeTolerance) {
+      continue;
+    }
+
+    for (const point of [a, b, c]) {
+      for (const axis of planeAxes) {
+        planeBounds[axis].min = Math.min(planeBounds[axis].min, point[axis]);
+        planeBounds[axis].max = Math.max(planeBounds[axis].max, point[axis]);
+      }
+    }
+  }
+
+  if (
+    !Number.isFinite(planeBounds[planeAxes[0]].min) ||
+    !Number.isFinite(planeBounds[planeAxes[1]].min)
+  ) {
+    return selectedCenter;
+  }
+
+  const center = selectedCenter.clone();
+  for (const axis of planeAxes) {
+    center[axis] = (planeBounds[axis].min + planeBounds[axis].max) / 2;
+  }
+  return center;
+}
+
+function surfaceWorldCenter(mesh: Mesh, faceId: number): Vector3 {
+  return Vector3.TransformCoordinates(surfaceLocalCenter(mesh, faceId), mesh.getWorldMatrix());
+}
+
+function surfaceWorldRotation(mesh: Mesh, faceId: number): Quaternion {
+  const axes = surfaceGeometryAxes(mesh, faceId);
+  const world = mesh.getWorldMatrix();
+  const xAxis = Vector3.TransformNormal(localAxisVector(axes.widthAxis), world).normalize();
+  const yAxis = Vector3.TransformNormal(localAxisVector(axes.heightAxis), world).normalize();
+  const normal = Vector3.TransformNormal(faceLocalNormal(mesh, faceId), world).normalize();
+  const frame = Matrix.Identity();
+  Matrix.FromXYZAxesToRef(xAxis, yAxis, normal, frame);
+  return Quaternion.FromRotationMatrix(frame);
+}
+
+function syncSurfaceGizmoProxy(
+  proxy: TransformNode,
+  mesh: Mesh,
+  faceId: number,
+  alignToSurface = false,
+): void {
+  proxy.position = surfaceWorldCenter(mesh, faceId);
+  proxy.rotationQuaternion = alignToSurface
+    ? surfaceWorldRotation(mesh, faceId)
+    : Quaternion.Identity();
+  proxy.scaling = Vector3.One();
+  proxy.computeWorldMatrix(true);
+}
+
+function applySurfaceGizmoProxyDelta(
+  proxy: TransformNode,
+  drag: {
+    mesh: Mesh;
+    proxyWorldMatrix: Matrix;
+    meshWorldMatrix: Matrix;
+  },
+): void {
+  const proxyWorld = proxy.computeWorldMatrix(true);
+  const proxyDelta = drag.proxyWorldMatrix.clone().invert().multiply(proxyWorld);
+  let nextMeshMatrix = drag.meshWorldMatrix.multiply(proxyDelta);
+  const parent = drag.mesh.parent;
+  if (parent && "getWorldMatrix" in parent) {
+    nextMeshMatrix = nextMeshMatrix.multiply(parent.getWorldMatrix().clone().invert());
+  }
+  const nextScale = Vector3.One();
+  const nextRotation = Quaternion.Identity();
+  const nextPosition = Vector3.Zero();
+  nextMeshMatrix.decompose(nextScale, nextRotation, nextPosition);
+  drag.mesh.position = nextPosition;
+  drag.mesh.rotationQuaternion = nextRotation;
+  drag.mesh.scaling = nextScale;
+  drag.mesh.computeWorldMatrix(true);
+}
+
+function dominantAxisFromNormal(normal: Vector3): GeometryAxis {
+  const absX = Math.abs(normal.x);
+  const absY = Math.abs(normal.y);
+  const absZ = Math.abs(normal.z);
+  if (absZ >= absX && absZ >= absY) return "z";
+  if (absY >= absX) return "y";
+  return "x";
+}
+
+function surfaceGeometryAxes(mesh: Mesh, faceId: number): SurfaceGeometryAxes {
+  const normalAxis = dominantAxisFromNormal(faceLocalNormal(mesh, faceId));
+  const planeAxes = AXES.filter((axis) => axis !== normalAxis);
+  if (planeAxes.length === 2) {
+    return { widthAxis: planeAxes[0], heightAxis: planeAxes[1] };
+  }
+
+  return { widthAxis: "x", heightAxis: "y" };
+}
+
+function localGeometryBounds(mesh: Mesh): LocalGeometryBounds | null {
+  const positions = meshPositions(mesh);
+  if (!positions || positions.length < 3) {
+    return null;
+  }
+
+  const bounds: LocalGeometryBounds = {
+    x: { min: Infinity, max: -Infinity, size: 0 },
+    y: { min: Infinity, max: -Infinity, size: 0 },
+    z: { min: Infinity, max: -Infinity, size: 0 },
+  };
+
+  for (let index = 0; index < positions.length; index += 3) {
+    bounds.x.min = Math.min(bounds.x.min, positions[index]);
+    bounds.x.max = Math.max(bounds.x.max, positions[index]);
+    bounds.y.min = Math.min(bounds.y.min, positions[index + 1]);
+    bounds.y.max = Math.max(bounds.y.max, positions[index + 1]);
+    bounds.z.min = Math.min(bounds.z.min, positions[index + 2]);
+    bounds.z.max = Math.max(bounds.z.max, positions[index + 2]);
+  }
+
+  for (const axis of AXES) {
+    bounds[axis].size = Math.max(bounds[axis].max - bounds[axis].min, 0);
+  }
+
+  return bounds;
+}
+
+function selectedGeometryDimensions(mesh: Mesh, faceId: number): {
+  width: number;
+  height: number;
+} {
+  const axes = surfaceGeometryAxes(mesh, faceId);
+  const bounds = localGeometryBounds(mesh);
+  if (!bounds) {
+    return { width: 0, height: 0 };
+  }
+  return {
+    width: bounds[axes.widthAxis].size,
+    height: bounds[axes.heightAxis].size,
+  };
+}
+
+function focusedGeometryRange(value: number): { min: number; max: number; step: number } {
+  const safeValue = Math.max(value, 0.001);
+  const span = Math.max(safeValue * 0.25, 0.02);
+  return {
+    min: Math.max(0.001, safeValue - span),
+    max: safeValue + span,
+    step: Math.max(safeValue * 0.001, 0.001),
+  };
+}
+
+function refreshMeshVertexGeometry(mesh: Mesh): void {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+  const indices = mesh.getIndices();
+  if (positions && indices) {
+    const normals: number[] = [];
+    VertexData.ComputeNormals(positions, indices, normals);
+    mesh.setVerticesData(VertexBuffer.NormalKind, normals, true);
+  }
+  mesh.refreshBoundingInfo(true);
+  mesh.computeWorldMatrix(true);
+}
+
+function applyGeometryData(
+  mesh: Mesh,
+  positions: number[] | null,
+  normals: number[] | null,
+): void {
+  if (!positions) {
+    return;
+  }
+  mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
+  if (normals) {
+    mesh.setVerticesData(VertexBuffer.NormalKind, normals, true);
+    mesh.refreshBoundingInfo(true);
+    mesh.computeWorldMatrix(true);
+    return;
+  }
+  refreshMeshVertexGeometry(mesh);
+}
+
+function resizeMeshGeometryOnAxes(
+  mesh: Mesh,
+  axes: SurfaceGeometryAxes,
+  nextWidth: number,
+  nextHeight: number,
+): boolean {
+  const positions = meshPositions(mesh);
+  const bounds = localGeometryBounds(mesh);
+  if (!positions || !bounds) {
+    return false;
+  }
+
+  const widthSize = bounds[axes.widthAxis].size;
+  const heightSize = bounds[axes.heightAxis].size;
+  if (widthSize <= 0 || heightSize <= 0 || nextWidth <= 0 || nextHeight <= 0) {
+    return false;
+  }
+
+  const widthScale = nextWidth / widthSize;
+  const heightScale = nextHeight / heightSize;
+  const widthCenter =
+    (bounds[axes.widthAxis].min + bounds[axes.widthAxis].max) / 2;
+  const heightCenter =
+    (bounds[axes.heightAxis].min + bounds[axes.heightAxis].max) / 2;
+  const widthOffset = axisOffset(axes.widthAxis);
+  const heightOffset = axisOffset(axes.heightAxis);
+
+  for (let index = 0; index < positions.length; index += 3) {
+    positions[index + widthOffset] =
+      widthCenter + (positions[index + widthOffset] - widthCenter) * widthScale;
+    positions[index + heightOffset] =
+      heightCenter + (positions[index + heightOffset] - heightCenter) * heightScale;
+  }
+
+  mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
+  refreshMeshVertexGeometry(mesh);
+  return true;
+}
+
+function isModelPickMesh(root: TransformNode | null, candidate: unknown): candidate is Mesh {
+  if (!(candidate instanceof Mesh) || !candidate.isPickable) {
+    return false;
+  }
+  return Boolean(root?.getChildMeshes(false).includes(candidate));
+}
+
+function meshWorldSizeScore(mesh: Mesh): number {
+  mesh.computeWorldMatrix(true);
+  const box = mesh.getBoundingInfo().boundingBox;
+  return box.extendSizeWorld.length();
+}
+
+function pickEditableSurface(
+  scene: Scene,
+  root: TransformNode | null,
+  x: number,
+  y: number,
+) {
+  const picks = scene.multiPick(x, y, (candidate) =>
+    isModelPickMesh(root, candidate),
+  );
+  const hits =
+    picks?.filter(
+      (pick) => pick.hit && pick.pickedMesh instanceof Mesh && pick.faceId >= 0,
+    ) ?? [];
+  if (hits.length === 0) {
+    return null;
+  }
+
+  const nearestDistance = Math.min(
+    ...hits.map((pick) => pick.distance || Number.MAX_VALUE),
+  );
+  const closeHits = hits.filter(
+    (pick) => (pick.distance || 0) <= nearestDistance + 0.12,
+  );
+  return closeHits.sort((left, right) => {
+    const leftMesh = left.pickedMesh as Mesh;
+    const rightMesh = right.pickedMesh as Mesh;
+    const sizeDelta = meshWorldSizeScore(leftMesh) - meshWorldSizeScore(rightMesh);
+    if (Math.abs(sizeDelta) > 0.001) {
+      return sizeDelta;
+    }
+    return (left.distance || 0) - (right.distance || 0);
+  })[0];
+}
+
 function editableMaterialFromRegion(regionMeshes: Mesh[], sourceMesh: Mesh): Material | null {
   const material = sourceMesh.material;
   if (!material) {
@@ -424,9 +894,11 @@ function surfaceSelectionFromMesh(
       ? material.emissiveColor
       : Color3.Black();
   const uv = readMaterialUvTransform(material);
+  const geometry = selectedGeometryDimensions(mesh, faceId);
 
   return {
     meshId: mesh.uniqueId,
+    faceId,
     meshName: mesh.name || `mesh_${mesh.uniqueId}`,
     regionMeshCount: regionMeshes.length,
     materialName: material?.name || "No material",
@@ -438,11 +910,19 @@ function surfaceSelectionFromMesh(
     uvOffsetU: uv.uvOffsetU,
     uvOffsetV: uv.uvOffsetV,
     faceUvRotationDeg: normalizeFaceUvRotationDeg(getFaceUvRotationDeg(mesh, faceId)),
+    geometryWidth: geometry.width,
+    geometryHeight: geometry.height,
+    drawOrder: mesh.alphaIndex,
     alpha: material?.alpha ?? 1,
     albedoColor: colorToHex(albedoColor),
     emissiveColor: colorToHex(emissiveColor),
     metallic: material instanceof PBRMaterial ? material.metallic ?? 0 : 0,
     roughness: material instanceof PBRMaterial ? material.roughness ?? 0.5 : 0.5,
+    twoSided: !material?.backFaceCulling,
+    depthWrite: !material?.disableDepthWrite,
+    forceDepthWrite: material?.forceDepthWrite ?? false,
+    depthTest: material?.depthFunction !== Engine.ALWAYS,
+    renderBias: material?.zOffset ?? 0,
     unlit:
       material instanceof PBRMaterial
         ? material.unlit
@@ -514,6 +994,11 @@ function captureMaterial(material: Material | null): MaterialSnapshot | null {
     emissiveColor: colorToHex(emissiveColor),
     metallic: material instanceof PBRMaterial ? material.metallic ?? 0 : 0,
     roughness: material instanceof PBRMaterial ? material.roughness ?? 0.5 : 0.5,
+    twoSided: !material.backFaceCulling,
+    depthWrite: !material.disableDepthWrite,
+    forceDepthWrite: material.forceDepthWrite,
+    depthTest: material.depthFunction !== Engine.ALWAYS,
+    renderBias: material.zOffset ?? 0,
     unlit:
       material instanceof PBRMaterial
         ? material.unlit
@@ -531,6 +1016,11 @@ function applyMaterial(material: Material | null, snapshot: MaterialSnapshot | n
   applyMaterialUvTransform(material, snapshot);
 
   material.alpha = snapshot.alpha;
+  material.backFaceCulling = !snapshot.twoSided;
+  material.disableDepthWrite = !snapshot.depthWrite;
+  material.forceDepthWrite = snapshot.forceDepthWrite ?? false;
+  material.depthFunction = snapshot.depthTest ? Engine.LEQUAL : Engine.ALWAYS;
+  material.zOffset = snapshot.renderBias;
   if (material instanceof PBRMaterial) {
     material.albedoColor = hexToColor(snapshot.albedoColor);
     material.emissiveColor = hexToColor(snapshot.emissiveColor);
@@ -561,6 +1051,13 @@ function captureObjectEditorSnapshot(
         {
           meshId: mesh.uniqueId,
           transform: captureTransform(mesh),
+          geometryPositions: mesh.getVerticesData(VertexBuffer.PositionKind)
+            ? Array.from(mesh.getVerticesData(VertexBuffer.PositionKind) ?? [])
+            : null,
+          geometryNormals: mesh.getVerticesData(VertexBuffer.NormalKind)
+            ? Array.from(mesh.getVerticesData(VertexBuffer.NormalKind) ?? [])
+            : null,
+          drawOrder: mesh.alphaIndex,
           material: captureMaterial(mesh.material),
           faceUv: captureMeshFaceUvSnapshot(mesh),
         },
@@ -591,6 +1088,12 @@ function applyObjectEditorSnapshot(
       continue;
     }
     applyTransform(mesh, meshSnapshot.transform);
+    applyGeometryData(
+      mesh,
+      meshSnapshot.geometryPositions,
+      meshSnapshot.geometryNormals,
+    );
+    mesh.alphaIndex = meshSnapshot.drawOrder;
     applyMaterial(mesh.material, meshSnapshot.material);
     if (meshSnapshot.faceUv) {
       applyMeshFaceUvSnapshot(mesh, meshSnapshot.faceUv);
@@ -643,6 +1146,7 @@ type NumericControlProps = {
   buttonStep?: number;
   disabled?: boolean;
   onChange: (value: number) => void;
+  onCommit?: (value: number) => void;
 };
 
 type IconToggleButtonProps = {
@@ -692,6 +1196,7 @@ function NumericControl({
   buttonStep,
   disabled = false,
   onChange,
+  onCommit,
 }: NumericControlProps) {
   const safeValue = Number.isFinite(value) ? value : min;
   const displayValue = clampNumber(safeValue, min, max);
@@ -714,6 +1219,12 @@ function NumericControl({
               onChange(clampNumber(next, min, max));
             }
           }}
+          onBlur={(event) => {
+            const next = Number(event.currentTarget.value);
+            if (Number.isFinite(next)) {
+              onCommit?.(clampNumber(next, min, max));
+            }
+          }}
         />
       </div>
       <div className="object-editor-slider-control">
@@ -721,7 +1232,11 @@ function NumericControl({
           type="button"
           aria-label={`Decrease ${label}`}
           disabled={disabled}
-          onClick={() => onChange(steppedValue(safeValue, nudgeStep, -1, min, max))}
+          onClick={() => {
+            const next = steppedValue(safeValue, nudgeStep, -1, min, max);
+            onChange(next);
+            onCommit?.(next);
+          }}
         >
           -
         </button>
@@ -733,12 +1248,18 @@ function NumericControl({
           disabled={disabled}
           value={displayValue}
           onChange={(event) => onChange(Number(event.currentTarget.value))}
+          onPointerUp={(event) => onCommit?.(Number(event.currentTarget.value))}
+          onKeyUp={(event) => onCommit?.(Number(event.currentTarget.value))}
         />
         <button
           type="button"
           aria-label={`Increase ${label}`}
           disabled={disabled}
-          onClick={() => onChange(steppedValue(safeValue, nudgeStep, 1, min, max))}
+          onClick={() => {
+            const next = steppedValue(safeValue, nudgeStep, 1, min, max);
+            onChange(next);
+            onCommit?.(next);
+          }}
         >
           +
         </button>
@@ -760,6 +1281,22 @@ type PanelResizeEdge = "sidebar" | "tools";
 
 function clampPanelWidth(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function editorSelectionsMatch(
+  left: EditorSelection | null,
+  right: EditorSelection,
+): boolean {
+  if (!left || left.type !== right.type) {
+    return false;
+  }
+  if (left.type === "catalog" && right.type === "catalog") {
+    return left.assetId === right.assetId;
+  }
+  if (left.type === "local" && right.type === "local") {
+    return left.file === right.file && left.loadKey === right.loadKey;
+  }
+  return false;
 }
 
 export default function ObjectEditor() {
@@ -820,9 +1357,20 @@ export default function ObjectEditor() {
   const selectedSurfaceMeshRef = useRef<Mesh | null>(null);
   const selectedFaceIdRef = useRef<number>(-1);
   const selectedRegionMeshesRef = useRef<Mesh[]>([]);
+  const surfaceGizmoProxyRef = useRef<TransformNode | null>(null);
+  const surfaceGizmoDragRef = useRef<{
+    mesh: Mesh;
+    faceId: number;
+    proxyWorldMatrix: Matrix;
+    meshWorldMatrix: Matrix;
+  } | null>(null);
+  const geometryLiveEditSnapshotRef =
+    useRef<ObjectEditorHistorySnapshot | null>(null);
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const [status, setStatus] = useState<ViewerStatus>("idle");
   const [selectedSurface, setSelectedSurface] = useState<SurfaceSelection | null>(null);
+  const [geometryControlRanges, setGeometryControlRanges] =
+    useState<GeometryControlRanges | null>(null);
   const [gridVisible, setGridVisible] = useState(true);
   const [rulersVisible, setRulersVisible] = useState(true);
   const [dimensionLabelsVisible, setDimensionLabelsVisible] = useState(true);
@@ -832,6 +1380,11 @@ export default function ObjectEditor() {
     useState<ViewportAxisLegendState | null>(null);
   const [viewportMode, setViewportMode] = useState<ViewportMode>("rotate");
   const viewportModeRef = useRef<ViewportMode>("rotate");
+  const [shiftPanActive, setShiftPanActive] = useState(false);
+  const shiftPanActiveRef = useRef(false);
+  const surfaceGizmoLocalAlignment = Boolean(selectedSurface && shiftPanActive);
+  const effectiveViewportMode: ViewportMode =
+    shiftPanActive && !selectedSurface ? "pan" : viewportMode;
   const [sceneReadyGeneration, setSceneReadyGeneration] = useState(0);
   const [gizmoEnabled, setGizmoEnabled] = useState(true);
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("move");
@@ -847,6 +1400,11 @@ export default function ObjectEditor() {
   const [saveDisplayName, setSaveDisplayName] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveMessage, setSaveMessage] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteStatus, setDeleteStatus] = useState<SaveStatus>("idle");
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const [modalPortalHost, setModalPortalHost] = useState<HTMLElement | null>(null);
   const [oilBarrelEditorActive, setOilBarrelEditorActive] = useState(false);
   const [oilBarrelFireEnabled, setOilBarrelFireEnabled] = useState(
     loadOilBarrelEditorInteriorFire,
@@ -905,14 +1463,21 @@ export default function ObjectEditor() {
     mesh.overlayColor = new Color3(0.18, 0.52, 1);
     mesh.overlayAlpha = 0.08;
     mesh.renderOverlay = true;
-    setSelectedSurface(surfaceSelectionFromMesh(mesh, regionMeshes, faceId));
+    const nextSelection = surfaceSelectionFromMesh(mesh, regionMeshes, faceId);
+    setGeometryControlRanges({
+      width: focusedGeometryRange(nextSelection.geometryWidth),
+      height: focusedGeometryRange(nextSelection.geometryHeight),
+    });
+    setSelectedSurface(nextSelection);
   }, [clearSelectedRegionOutline]);
 
   const clearSurfaceSelection = useCallback(() => {
     clearSelectedRegionOutline();
+    surfaceGizmoDragRef.current = null;
     selectedSurfaceMeshRef.current = null;
     selectedFaceIdRef.current = -1;
     selectedRegionMeshesRef.current = [];
+    setGeometryControlRanges(null);
     setSelectedSurface(null);
   }, [clearSelectedRegionOutline]);
 
@@ -1066,6 +1631,19 @@ export default function ObjectEditor() {
     [allAssets],
   );
 
+  const unloadEditorModelFromScene = useCallback(() => {
+    const scene = sceneRef.current;
+    clearDimensionGuides();
+    if (scene && !scene.isDisposed) {
+      disposeEditorModelRoots(scene);
+    }
+    currentRootRef.current = null;
+    gizmoManagerRef.current?.attachToNode(null);
+    gizmoManagerRef.current?.attachToMesh(null);
+    refreshObjectMeasurementsRef.current();
+    refreshViewportRulerRef.current();
+  }, [clearDimensionGuides]);
+
   const resetEditorForNewModel = useCallback(() => {
     editorLoadSequenceRef.current += 1;
     clearSurfaceSelection();
@@ -1088,22 +1666,33 @@ export default function ObjectEditor() {
     baselineSnapshotRef.current = null;
     setIsDirty(false);
     refreshHistoryAvailability();
-    currentRootRef.current = null;
-    clearDimensionGuides();
-    gizmoManagerRef.current?.attachToNode(null);
-    gizmoManagerRef.current?.attachToMesh(null);
-  }, [clearSurfaceSelection, clearDimensionGuides, refreshHistoryAvailability]);
+    unloadEditorModelFromScene();
+  }, [
+    clearSurfaceSelection,
+    refreshHistoryAvailability,
+    unloadEditorModelFromScene,
+  ]);
 
   const queueEditorAssetSelection = useCallback(
     (nextSelection: EditorSelection) => {
       const nextAsset = resolveEditorDisplayAsset(nextSelection);
       if (!nextAsset) {
-        return;
+        return false;
+      }
+      if (
+        isDirty &&
+        !editorSelectionsMatch(selection, nextSelection) &&
+        !window.confirm(
+          "You have unsaved changes on this GLB. Load another model and discard those changes?",
+        )
+      ) {
+        return false;
       }
       resetEditorForNewModel();
       setSelection(nextSelection);
+      return true;
     },
-    [resetEditorForNewModel, resolveEditorDisplayAsset],
+    [isDirty, resetEditorForNewModel, resolveEditorDisplayAsset, selection],
   );
 
   const undoEditorHistory = useCallback(() => {
@@ -1175,6 +1764,40 @@ export default function ObjectEditor() {
   }, [viewportMode]);
 
   useEffect(() => {
+    shiftPanActiveRef.current = shiftPanActive;
+  }, [shiftPanActive]);
+
+  useEffect(() => {
+    const setShiftPan = (active: boolean) => {
+      if (shiftPanActiveRef.current === active) {
+        return;
+      }
+      shiftPanActiveRef.current = active;
+      setShiftPanActive(active);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Shift") {
+        setShiftPan(true);
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Shift") {
+        setShiftPan(false);
+      }
+    };
+    const onBlur = () => setShiftPan(false);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
@@ -1204,11 +1827,8 @@ export default function ObjectEditor() {
     camera.maxZ = 1000;
     camera.wheelDeltaPercentage = 0.015;
     camera.panningSensibility = OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY;
-    applyViewportMode(camera, viewportModeRef.current);
+    applyViewportMode(camera, shiftPanActiveRef.current ? "pan" : viewportModeRef.current);
     setSceneReadyGeneration((generation) => generation + 1);
-    const panSyncObserver = camera.onAfterCheckInputsObservable.add(() => {
-      syncObjectEditorPanSensibility(camera);
-    });
     cameraRef.current = camera;
     scene.activeCamera = camera;
 
@@ -1287,12 +1907,12 @@ export default function ObjectEditor() {
       if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) {
         return;
       }
-      const pick = scene.pick(scene.pointerX, scene.pointerY, (candidate) => {
-        if (!(candidate instanceof Mesh) || !candidate.isPickable) {
-          return false;
-        }
-        return Boolean(currentRootRef.current?.getChildMeshes(false).includes(candidate));
-      });
+      const pick = pickEditableSurface(
+        scene,
+        currentRootRef.current,
+        event.offsetX,
+        event.offsetY,
+      );
       if (pick?.hit && pick.pickedMesh instanceof Mesh) {
         if (
           selectedSurfaceMeshRef.current === pick.pickedMesh &&
@@ -1310,7 +1930,7 @@ export default function ObjectEditor() {
     canvas.addEventListener("pointerup", onPointerUp);
     engine.runRenderLoop(() => {
       const now = performance.now();
-      if (now - lastViewportRulerSyncMs > 160) {
+      if (now - lastViewportRulerSyncMs > OBJECT_EDITOR_VIEWPORT_RULER_SYNC_MS) {
         lastViewportRulerSyncMs = now;
         const rulerKey = [
           Math.round(camera.radius * 10000),
@@ -1318,8 +1938,6 @@ export default function ObjectEditor() {
           Math.round(camera.target.x * 10000),
           Math.round(camera.target.y * 10000),
           Math.round(camera.target.z * 10000),
-          Math.round(camera.alpha * 10000),
-          Math.round(camera.beta * 10000),
           canvas.clientWidth,
           canvas.clientHeight,
         ].join(":");
@@ -1332,9 +1950,25 @@ export default function ObjectEditor() {
       const isGizmoDragging = gizmoManager.isDragging;
       if (isGizmoDragging && !wasGizmoDragging) {
         gizmoDragSnapshot = captureObjectEditorSnapshot(currentRootRef.current);
+        const surfaceMesh = selectedSurfaceMeshRef.current;
+        const proxy = surfaceGizmoProxyRef.current;
+        if (surfaceMesh && proxy) {
+          surfaceGizmoDragRef.current = {
+            mesh: surfaceMesh,
+            faceId: selectedFaceIdRef.current,
+            proxyWorldMatrix: proxy.computeWorldMatrix(true).clone(),
+            meshWorldMatrix: surfaceMesh.computeWorldMatrix(true).clone(),
+          };
+        }
       }
       if (isGizmoDragging && currentRootRef.current) {
-        clampObjectEditorScale(currentRootRef.current);
+        const surfaceDrag = surfaceGizmoDragRef.current;
+        if (surfaceDrag && surfaceGizmoProxyRef.current) {
+          applySurfaceGizmoProxyDelta(surfaceGizmoProxyRef.current, surfaceDrag);
+          clampObjectEditorScale(surfaceDrag.mesh);
+        } else {
+          clampObjectEditorScale(currentRootRef.current);
+        }
         if (now - lastMeasurementSyncMs > 90) {
           lastMeasurementSyncMs = now;
           refreshObjectMeasurementsRef.current();
@@ -1342,9 +1976,27 @@ export default function ObjectEditor() {
         }
       }
       if (!isGizmoDragging && wasGizmoDragging) {
-        if (currentRootRef.current) {
+        const surfaceDrag = surfaceGizmoDragRef.current;
+        if (surfaceDrag && surfaceGizmoProxyRef.current) {
+          applySurfaceGizmoProxyDelta(surfaceGizmoProxyRef.current, surfaceDrag);
+          clampObjectEditorScale(surfaceDrag.mesh);
+          syncSurfaceGizmoProxy(
+            surfaceGizmoProxyRef.current,
+            surfaceDrag.mesh,
+            surfaceDrag.faceId,
+            shiftPanActiveRef.current,
+          );
+          setSelectedSurface(
+            surfaceSelectionFromMesh(
+              surfaceDrag.mesh,
+              selectedRegionMeshesRef.current,
+              surfaceDrag.faceId,
+            ),
+          );
+        } else if (currentRootRef.current) {
           clampObjectEditorScale(currentRootRef.current);
         }
+        surfaceGizmoDragRef.current = null;
         commitHistorySnapshotRef.current(gizmoDragSnapshot);
         refreshObjectMeasurementsRef.current();
         gizmoDragSnapshot = null;
@@ -1403,7 +2055,6 @@ export default function ObjectEditor() {
       editorLoadSequenceRef.current += 1;
       camera.detachControl();
       engine.stopRenderLoop();
-      camera.onAfterCheckInputsObservable.remove(panSyncObserver);
       clearDimensionGuidesRef.current();
       disposeEditorModelRoots(scene);
       clearSelectedRegionOutlineRef.current();
@@ -1414,6 +2065,8 @@ export default function ObjectEditor() {
       sceneRef.current = null;
       cameraRef.current = null;
       currentRootRef.current = null;
+      surfaceGizmoProxyRef.current = null;
+      surfaceGizmoDragRef.current = null;
       gizmoManagerRef.current = null;
       gridRef.current = null;
     };
@@ -1422,7 +2075,13 @@ export default function ObjectEditor() {
   useEffect(() => {
     const scene = sceneRef.current;
     const camera = cameraRef.current;
-    if (!scene || !camera || !displayAsset || !selection) {
+    if (!scene || !camera) {
+      return undefined;
+    }
+
+    if (!displayAsset || !selection) {
+      editorLoadSequenceRef.current += 1;
+      unloadEditorModelFromScene();
       return undefined;
     }
 
@@ -1456,6 +2115,7 @@ export default function ObjectEditor() {
           return;
         }
         setStatus("loading");
+        setGeometryControlRanges(null);
         setSelectedSurface(null);
         refreshHistoryAvailability();
         const rootName = `objectEditor_${displayAsset.id}`;
@@ -1571,6 +2231,7 @@ export default function ObjectEditor() {
     clearDimensionGuides,
     refreshDirtyState,
     refreshHistoryAvailability,
+    unloadEditorModelFromScene,
   ]);
 
   useEffect(() => {
@@ -1578,8 +2239,9 @@ export default function ObjectEditor() {
     if (!camera) {
       return;
     }
-    applyViewportMode(camera, viewportModeRef.current);
-  }, [viewportMode, sceneReadyGeneration]);
+    applyViewportMode(camera, effectiveViewportMode);
+    refreshViewportRulerRef.current();
+  }, [effectiveViewportMode, sceneReadyGeneration]);
 
   useEffect(() => {
     if (gridRef.current) {
@@ -1590,6 +2252,10 @@ export default function ObjectEditor() {
   useEffect(() => {
     refreshObjectMeasurements();
   }, [refreshObjectMeasurements, sceneReadyGeneration, dimensionLabelsVisible]);
+
+  const selectedSurfaceGizmoKey = selectedSurface
+    ? `${selectedSurface.meshId}:${selectedSurface.faceId}`
+    : "none";
 
   useEffect(() => {
     const gizmoManager = gizmoManagerRef.current;
@@ -1613,9 +2279,36 @@ export default function ObjectEditor() {
     gizmoManager.attachToNode(null);
     gizmoManager.attachToMesh(null);
     if (shouldShow) {
-      gizmoManager.attachToNode(currentRootRef.current);
+      const selectedMesh = selectedSurfaceMeshRef.current;
+      if (selectedMesh) {
+        const scene = sceneRef.current;
+        if (!scene) {
+          return;
+        }
+        const proxy =
+          surfaceGizmoProxyRef.current ??
+          new TransformNode("objectEditorSurfaceGizmoProxy", scene);
+        surfaceGizmoProxyRef.current = proxy;
+        syncSurfaceGizmoProxy(
+          proxy,
+          selectedMesh,
+          selectedFaceIdRef.current,
+          surfaceGizmoLocalAlignment,
+        );
+        gizmoManager.attachToNode(proxy);
+      } else {
+        gizmoManager.attachToNode(currentRootRef.current);
+      }
     }
-  }, [gizmoEnabled, gizmoMode, scaleLinked, status, sceneReadyGeneration]);
+  }, [
+    gizmoEnabled,
+    gizmoMode,
+    scaleLinked,
+    status,
+    sceneReadyGeneration,
+    selectedSurfaceGizmoKey,
+    surfaceGizmoLocalAlignment,
+  ]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1673,6 +2366,10 @@ export default function ObjectEditor() {
       ...patch,
     };
 
+    if (patch.drawOrder !== undefined) {
+      mesh.alphaIndex = next.drawOrder;
+    }
+
     if (patch.faceUvRotationDeg !== undefined) {
       if (faceId >= 0 && meshHasFaceUvs(mesh)) {
         setFaceUvRotationDeg(mesh, faceId, next.faceUvRotationDeg);
@@ -1694,6 +2391,12 @@ export default function ObjectEditor() {
     }
 
     material.alpha = next.alpha;
+    material.backFaceCulling = !next.twoSided;
+    material.disableDepthWrite = !next.depthWrite;
+    material.forceDepthWrite =
+      patch.depthWrite !== undefined ? false : next.forceDepthWrite;
+    material.depthFunction = next.depthTest ? Engine.LEQUAL : Engine.ALWAYS;
+    material.zOffset = next.renderBias;
     if (material instanceof PBRMaterial) {
       material.albedoColor = hexToColor(next.albedoColor);
       material.emissiveColor = hexToColor(next.emissiveColor);
@@ -1716,6 +2419,56 @@ export default function ObjectEditor() {
       ...patch,
     });
     commitHistorySnapshot(before);
+  };
+
+  const updateSelectedSurfaceGeometry = (
+    patch: Partial<Pick<SurfaceSelection, "geometryWidth" | "geometryHeight">>,
+    commit = false,
+  ) => {
+    const mesh = selectedSurfaceMeshRef.current;
+    const faceId = selectedFaceIdRef.current;
+    if (!mesh || !selectedSurface || status !== "ready") {
+      return;
+    }
+
+    if (!geometryLiveEditSnapshotRef.current) {
+      geometryLiveEditSnapshotRef.current = captureObjectEditorSnapshot(
+        currentRootRef.current,
+      );
+    }
+    const nextWidth = patch.geometryWidth ?? selectedSurface.geometryWidth;
+    const nextHeight = patch.geometryHeight ?? selectedSurface.geometryHeight;
+    const resized = resizeMeshGeometryOnAxes(
+      mesh,
+      surfaceGeometryAxes(mesh, faceId),
+      nextWidth,
+      nextHeight,
+    );
+    if (!resized) {
+      return;
+    }
+
+    setSelectedSurface(
+      surfaceSelectionFromMesh(
+        mesh,
+        selectedRegionMeshesRef.current,
+        faceId,
+      ),
+    );
+    if (!gizmoManagerRef.current?.isDragging && surfaceGizmoProxyRef.current) {
+      syncSurfaceGizmoProxy(
+        surfaceGizmoProxyRef.current,
+        mesh,
+        faceId,
+        surfaceGizmoLocalAlignment,
+      );
+    }
+    if (commit) {
+      refreshObjectMeasurementsRef.current();
+      refreshViewportRulerRef.current();
+      commitHistorySnapshot(geometryLiveEditSnapshotRef.current);
+      geometryLiveEditSnapshotRef.current = null;
+    }
   };
 
   const updateModelToggleState = (toggleId: ModelToggleId, open: boolean) => {
@@ -1744,6 +2497,10 @@ export default function ObjectEditor() {
   };
 
   const selectCatalogAsset = (assetId: string) => {
+    const accepted = queueEditorAssetSelection({ type: "catalog", assetId });
+    if (!accepted) {
+      return;
+    }
     setExpandedFolderIds((current) => {
       const next = new Set(current);
       for (const id of collectFolderIdsForAsset(modelTree, assetId)) {
@@ -1751,7 +2508,6 @@ export default function ObjectEditor() {
       }
       return next;
     });
-    queueEditorAssetSelection({ type: "catalog", assetId });
   };
 
   const toggleFolder = (folderId: string) => {
@@ -1777,17 +2533,20 @@ export default function ObjectEditor() {
       return;
     }
     const modelName = defaultModelNameFromFileName(file.name);
+    const accepted = queueEditorAssetSelection({
+      type: "local",
+      file,
+      loadKey: selection?.type === "local" ? selection.loadKey + 1 : 0,
+    });
+    if (!accepted) {
+      return;
+    }
     setSaveFolder(defaultFolderFromFileName(file.name));
     setSaveModelName(modelName);
     setSaveDisplayName(titleCaseSegment(modelName));
     setSaveStatus("idle");
     setSaveMessage("");
     setExpandedFolderIds((current) => new Set(current).add("local"));
-    queueEditorAssetSelection({
-      type: "local",
-      file,
-      loadKey: selection?.type === "local" ? selection.loadKey + 1 : 0,
-    });
   };
 
   const handleSaveToServer = async () => {
@@ -1958,6 +2717,57 @@ export default function ObjectEditor() {
     status,
   ]);
 
+  const selectedUserAsset =
+    selection?.type === "catalog"
+      ? userAssets.find((asset) => asset.id === selection.assetId)
+      : undefined;
+  const deleteConfirmMatches =
+    selectedUserAsset !== undefined && deleteConfirmName === selectedUserAsset.name;
+
+  const closeDeleteDialog = useCallback(() => {
+    setDeleteDialogOpen(false);
+    setDeleteConfirmName("");
+    setDeleteStatus("idle");
+    setDeleteMessage("");
+  }, []);
+
+  const openDeleteDialog = () => {
+    if (!selectedUserAsset || saveStatus === "saving" || deleteStatus === "saving") {
+      return;
+    }
+    setDeleteConfirmName("");
+    setDeleteStatus("idle");
+    setDeleteMessage("");
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteSelectedModel = async () => {
+    if (!selectedUserAsset || !deleteConfirmMatches || deleteStatus === "saving") {
+      return;
+    }
+    setDeleteStatus("saving");
+    setDeleteMessage("");
+    try {
+      const result = await deleteModelFromServer(
+        selectedUserAsset.id,
+        deleteConfirmName,
+      );
+      resetEditorForNewModel();
+      setSelection(null);
+      setUserAssets((current) =>
+        current.filter((asset) => asset.id !== result.asset.id),
+      );
+      closeDeleteDialog();
+      setDeleteStatus("success");
+      setDeleteMessage(`Deleted ${result.asset.path}`);
+    } catch (error) {
+      setDeleteStatus("error");
+      setDeleteMessage(
+        error instanceof Error ? error.message : "Could not delete model.",
+      );
+    }
+  };
+
   const patchOilBarrelFireTuning = useCallback(
     (patch: Partial<OilBarrelFireTuning>) => {
       const root = currentRootRef.current;
@@ -2114,6 +2924,28 @@ export default function ObjectEditor() {
     return () => window.removeEventListener("resize", clampPanelSizes);
   }, [getMaxSidebarWidth, getMaxToolsWidth]);
 
+  useEffect(() => {
+    setModalPortalHost(document.body);
+  }, []);
+
+  useEffect(() => {
+    if (!deleteDialogOpen) {
+      return undefined;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && deleteStatus !== "saving") {
+        closeDeleteDialog();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [closeDeleteDialog, deleteDialogOpen, deleteStatus]);
+
   return (
     <main
       ref={shellRef}
@@ -2217,7 +3049,7 @@ export default function ObjectEditor() {
             <IconToggleButton
               label="Rotate view"
               icon={faRotate}
-              active={viewportMode === "rotate"}
+              active={effectiveViewportMode === "rotate"}
               onClick={() => {
                 viewportModeRef.current = "rotate";
                 setViewportMode("rotate");
@@ -2226,7 +3058,7 @@ export default function ObjectEditor() {
             <IconToggleButton
               label="Pan view"
               icon={faHand}
-              active={viewportMode === "pan"}
+              active={effectiveViewportMode === "pan"}
               onClick={() => {
                 viewportModeRef.current = "pan";
                 setViewportMode("pan");
@@ -2601,6 +3433,48 @@ export default function ObjectEditor() {
                       Click a face on the model to edit per-face texture rotation.
                     </p>
                   ) : null}
+                  {(() => {
+                    const widthRange =
+                      geometryControlRanges?.width ??
+                      focusedGeometryRange(selectedSurface.geometryWidth);
+                    const heightRange =
+                      geometryControlRanges?.height ??
+                      focusedGeometryRange(selectedSurface.geometryHeight);
+                    return (
+                  <div className="object-editor-control-grid">
+                    <NumericControl
+                      label="Geometry width"
+                      min={widthRange.min}
+                      max={widthRange.max}
+                      step={widthRange.step}
+                      buttonStep={widthRange.step}
+                      disabled={selectedSurface.geometryWidth <= 0}
+                      value={selectedSurface.geometryWidth}
+                      onChange={(geometryWidth) =>
+                        updateSelectedSurfaceGeometry({ geometryWidth })
+                      }
+                      onCommit={(geometryWidth) =>
+                        updateSelectedSurfaceGeometry({ geometryWidth }, true)
+                      }
+                    />
+                    <NumericControl
+                      label="Geometry height"
+                      min={heightRange.min}
+                      max={heightRange.max}
+                      step={heightRange.step}
+                      buttonStep={heightRange.step}
+                      disabled={selectedSurface.geometryHeight <= 0}
+                      value={selectedSurface.geometryHeight}
+                      onChange={(geometryHeight) =>
+                        updateSelectedSurfaceGeometry({ geometryHeight })
+                      }
+                      onCommit={(geometryHeight) =>
+                        updateSelectedSurfaceGeometry({ geometryHeight }, true)
+                      }
+                    />
+                  </div>
+                    );
+                  })()}
                   <div className="object-editor-control-grid">
                     <NumericControl
                       label="Material UV width"
@@ -2734,6 +3608,24 @@ export default function ObjectEditor() {
                       value={selectedSurface.metallic}
                       onChange={(metallic) => updateSelectedSurface({ metallic })}
                     />
+                    <NumericControl
+                      label="Render bias"
+                      min={-8}
+                      max={8}
+                      step={0.1}
+                      buttonStep={0.1}
+                      value={selectedSurface.renderBias}
+                      onChange={(renderBias) => updateSelectedSurface({ renderBias })}
+                    />
+                    <NumericControl
+                      label="Draw order"
+                      min={-10000}
+                      max={10000}
+                      step={1}
+                      buttonStep={10}
+                      value={selectedSurface.drawOrder}
+                      onChange={(drawOrder) => updateSelectedSurface({ drawOrder })}
+                    />
                     <label className="object-editor-control object-editor-control--inline">
                       <span>Unlit</span>
                       <input
@@ -2742,6 +3634,42 @@ export default function ObjectEditor() {
                         onChange={(event) =>
                           updateSelectedSurface({
                             unlit: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="object-editor-control object-editor-control--inline">
+                      <span>Two sided</span>
+                      <input
+                        type="checkbox"
+                        checked={selectedSurface.twoSided}
+                        onChange={(event) =>
+                          updateSelectedSurface({
+                            twoSided: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="object-editor-control object-editor-control--inline">
+                      <span>Depth write</span>
+                      <input
+                        type="checkbox"
+                        checked={selectedSurface.depthWrite}
+                        onChange={(event) =>
+                          updateSelectedSurface({
+                            depthWrite: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="object-editor-control object-editor-control--inline">
+                      <span>Depth test</span>
+                      <input
+                        type="checkbox"
+                        checked={selectedSurface.depthTest}
+                        onChange={(event) =>
+                          updateSelectedSurface({
+                            depthTest: event.currentTarget.checked,
                           })
                         }
                       />
@@ -2910,7 +3838,118 @@ export default function ObjectEditor() {
           </section>
         ) : null}
 
+        {selectedUserAsset ? (
+          <section className="object-editor-tool-section object-editor-tool-section--danger">
+            <h3>Delete GLB</h3>
+            <p className="object-editor-save-hint">
+              Permanently removes this saved GLB from <code>public/models/</code>.
+            </p>
+            <p className="object-editor-save-preview">
+              <span>Target</span>
+              <code>{selectedUserAsset.path}</code>
+            </p>
+            <button
+              type="button"
+              className="object-editor-save-btn object-editor-save-btn--danger"
+              disabled={saveStatus === "saving" || deleteStatus === "saving"}
+              onClick={openDeleteDialog}
+            >
+              Delete GLB
+            </button>
+            {deleteMessage ? (
+              <p
+                className={[
+                  "object-editor-save-message",
+                  deleteStatus === "error"
+                    ? "object-editor-save-message--error"
+                    : "object-editor-save-message--success",
+                ].join(" ")}
+              >
+                {deleteMessage}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
       </aside>
+      {modalPortalHost && deleteDialogOpen && selectedUserAsset
+        ? createPortal(
+            <div
+              className="object-editor-modal-backdrop"
+              role="presentation"
+              onClick={() => {
+                if (deleteStatus !== "saving") {
+                  closeDeleteDialog();
+                }
+              }}
+            >
+              <div
+                className="object-editor-modal object-editor-modal--delete"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="object-editor-delete-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="object-editor-modal__header">
+                  <h2 id="object-editor-delete-title">Delete GLB</h2>
+                  <p className="object-editor-modal__lead">
+                    This will permanently remove the file from{" "}
+                    <code>public/models/</code>. Type the model name exactly to
+                    confirm.
+                  </p>
+                  <p className="object-editor-modal__path">
+                    <code>{selectedUserAsset.path}</code>
+                  </p>
+                </header>
+
+                <div className="object-editor-modal__field">
+                  <label htmlFor="object-editor-delete-confirm">
+                    Confirm model name
+                  </label>
+                  <input
+                    id="object-editor-delete-confirm"
+                    type="text"
+                    value={deleteConfirmName}
+                    onChange={(event) =>
+                      setDeleteConfirmName(event.currentTarget.value)
+                    }
+                    placeholder={selectedUserAsset.name}
+                    spellCheck={false}
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  <p className="object-editor-modal__hint">
+                    Type <strong>{selectedUserAsset.name}</strong>
+                  </p>
+                </div>
+
+                {deleteMessage && deleteStatus === "error" ? (
+                  <p className="object-editor-modal__error">{deleteMessage}</p>
+                ) : null}
+
+                <footer className="object-editor-modal__actions">
+                  <button
+                    type="button"
+                    className="object-editor-save-btn object-editor-save-btn--danger"
+                    disabled={!deleteConfirmMatches || deleteStatus === "saving"}
+                    onClick={() => void handleDeleteSelectedModel()}
+                  >
+                    {deleteStatus === "saving" ? "Deleting…" : "Delete permanently"}
+                  </button>
+                  <button
+                    type="button"
+                    className="object-editor-save-btn object-editor-save-btn--secondary"
+                    disabled={deleteStatus === "saving"}
+                    onClick={closeDeleteDialog}
+                  >
+                    Cancel
+                  </button>
+                </footer>
+              </div>
+            </div>,
+            modalPortalHost,
+          )
+        : null}
     </main>
   );
 }

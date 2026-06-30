@@ -8,7 +8,18 @@
     "notes": "Saved from object editor.",
     "folder": "assets",
     "modelName": "ammo-crate",
-    "savedAt": "2026-06-28T19:13:32.140Z"
+    "savedAt": "2026-06-30T22:05:06.242Z"
+  },
+  {
+    "id": "assets-control-panel",
+    "name": "Control Panel",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/control-panel.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "control-panel",
+    "savedAt": "2026-06-30T19:51:21.847Z"
   },
   {
     "id": "assets-grenade",
@@ -63,13 +74,13 @@
     "path": "/models/assets/vx27-container.glb",
     "notes": "Saved from object editor.",
     "animationToggles": {
-      "front-left": false,
-      "front-right": true,
-      "back-left": false,
-      "back-right": true
+      "front-left": true,
+      "front-right": false,
+      "back-left": true,
+      "back-right": false
     },
     "folder": "assets",
     "modelName": "vx27-container",
-    "savedAt": "2026-06-30T01:35:15.330Z"
+    "savedAt": "2026-06-30T21:39:25.117Z"
   }
 ]

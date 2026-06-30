@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -251,5 +251,75 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     asset: toPublicAsset(entry),
     overwritten,
+  });
+}
+
+export async function DELETE(request: NextRequest) {
+  const blocked = devOnlyGuard();
+  if (blocked) {
+    return blocked;
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Expected JSON body." }, { status: 400 });
+  }
+
+  const { assetId, confirmName } =
+    payload && typeof payload === "object"
+      ? (payload as { assetId?: unknown; confirmName?: unknown })
+      : {};
+  if (typeof assetId !== "string" || typeof confirmName !== "string") {
+    return NextResponse.json(
+      { error: "Asset id and confirmation name are required." },
+      { status: 400 },
+    );
+  }
+
+  const catalog = await readUserCatalog();
+  const entry = catalog.find((item) => item.id === assetId);
+  if (!entry) {
+    return NextResponse.json(
+      { error: "Only saved user-catalog models can be deleted here." },
+      { status: 404 },
+    );
+  }
+  if (confirmName !== entry.name) {
+    return NextResponse.json(
+      { error: `Type ${entry.name} exactly to confirm delete.` },
+      { status: 400 },
+    );
+  }
+
+  const segments = parseModelSegments(entry.folder, entry.modelName);
+  if (!segments || buildModelAssetId(segments.folder, segments.modelName) !== entry.id) {
+    return NextResponse.json({ error: "Catalog entry has an invalid path." }, { status: 400 });
+  }
+
+  const filePath = path.resolve(
+    path.join(MODELS_ROOT, segments.folder, `${segments.modelName}.glb`),
+  );
+  const modelsRoot = path.resolve(MODELS_ROOT);
+  if (!filePath.startsWith(`${modelsRoot}${path.sep}`)) {
+    return NextResponse.json({ error: "Invalid delete path." }, { status: 400 });
+  }
+
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    const code = typeof error === "object" && error ? (error as { code?: string }).code : "";
+    if (code !== "ENOENT") {
+      return NextResponse.json({ error: "Could not delete GLB file." }, { status: 500 });
+    }
+  }
+
+  const nextCatalog = catalog.filter((item) => item.id !== entry.id);
+  await writeUserCatalog(nextCatalog);
+
+  return NextResponse.json({
+    deleted: true,
+    asset: toPublicAsset(entry),
   });
 }
