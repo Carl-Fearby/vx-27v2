@@ -22,6 +22,17 @@
     "savedAt": "2026-06-28T21:55:32.693Z"
   },
   {
+    "id": "assets-hp-reward",
+    "name": "Hp Reward",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/hp-reward.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "hp-reward",
+    "savedAt": "2026-06-29T22:10:33.388Z"
+  },
+  {
     "id": "assets-oil-barrel",
     "name": "Oil Barrel",
     "category": "Assets",
@@ -43,5 +54,16 @@
     "folder": "assets",
     "modelName": "score-token",
     "savedAt": "2026-06-28T23:44:26.508Z"
+  },
+  {
+    "id": "assets-vx27-container",
+    "name": "Vx27 Container",
+    "category": "Assets",
+    "type": "glb",
+    "path": "/models/assets/vx27-container.glb",
+    "notes": "Saved from object editor.",
+    "folder": "assets",
+    "modelName": "vx27-container",
+    "savedAt": "2026-06-29T23:53:50.133Z"
   }
 ]

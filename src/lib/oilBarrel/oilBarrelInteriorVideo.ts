@@ -125,7 +125,8 @@ function videoTextureIsLive(texture: VideoTexture | null): boolean {
     return false;
   }
   try {
-    return !texture.isDisposed && texture.getInternalTexture() != null;
+    const internalTexture = texture.getInternalTexture();
+    return Boolean(internalTexture?.isReady);
   } catch {
     return false;
   }
@@ -369,6 +370,7 @@ export async function createOilBarrelInteriorVideoMesh(
   mesh.metadata = {
     ...mesh.metadata,
     isOilBarrelInteriorVideo: true,
+    objectEditorExcludeFromMeasurements: true,
     innerRadius,
     floorY,
     clipTopY,

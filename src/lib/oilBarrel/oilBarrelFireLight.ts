@@ -117,6 +117,7 @@ export function addOilBarrelFireLight(
   rig.metadata = {
     ...rig.metadata,
     isOilBarrelFireLightRig: true,
+    objectEditorExcludeFromMeasurements: true,
   };
 
   const left = createFireLightSide(

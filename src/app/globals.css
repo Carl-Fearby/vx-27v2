@@ -319,7 +319,71 @@ body:has(.app-shell) {
 }
 
 .object-editor-canvas-wrap {
+  --object-editor-ruler-size: 1.65rem;
   position: relative;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.object-editor-viewport-frame {
+  display: grid;
+  grid-template-columns: var(--object-editor-ruler-size) minmax(0, 1fr);
+  grid-template-rows: var(--object-editor-ruler-size) minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+
+.object-editor-viewport-frame--no-rulers {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.object-editor-viewport-corner {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0.1rem 0.22rem;
+  border-bottom: 1px solid rgba(94, 170, 255, 0.28);
+  border-right: 1px solid rgba(94, 170, 255, 0.28);
+  background: rgba(5, 10, 16, 0.96);
+  color: rgba(232, 241, 255, 0.96);
+  font-size: clamp(0.58rem, 0.72vw, 0.68rem);
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.object-editor-viewport-ruler {
+  position: relative;
+  overflow: hidden;
+  background: rgba(5, 10, 16, 0.96);
+  color: rgba(207, 232, 255, 0.88);
+  pointer-events: none;
+  user-select: none;
+}
+
+.object-editor-viewport-ruler--left {
+  grid-column: 1;
+  grid-row: 2;
+  border-right: 1px solid rgba(94, 170, 255, 0.28);
+}
+
+.object-editor-viewport-ruler--top {
+  grid-column: 2;
+  grid-row: 1;
+  border-bottom: 1px solid rgba(94, 170, 255, 0.28);
+}
+
+.object-editor-viewport-stage {
+  position: relative;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
   min-height: 0;
   background:
     linear-gradient(rgba(94, 170, 255, 0.05) 1px, transparent 1px),
@@ -327,6 +391,101 @@ body:has(.app-shell) {
     radial-gradient(circle at 50% 30%, rgba(94, 170, 255, 0.13), transparent 34%),
     #090d13;
   background-size: 44px 44px, 44px 44px, auto, auto;
+}
+
+.object-editor-viewport-frame--no-rulers .object-editor-viewport-stage {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.object-editor-viewport-ruler-mark {
+  position: absolute;
+  pointer-events: none;
+}
+
+.object-editor-viewport-ruler-mark-line {
+  display: block;
+  flex-shrink: 0;
+  background: rgba(94, 170, 255, 0.38);
+}
+
+.object-editor-viewport-ruler-mark-label {
+  color: rgba(232, 241, 255, 0.92);
+  font-size: clamp(0.58rem, 0.72vw, 0.68rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(5, 10, 16, 0.9);
+}
+
+.object-editor-viewport-ruler-mark--major .object-editor-viewport-ruler-mark-line {
+  background: rgba(94, 170, 255, 0.68);
+}
+
+.object-editor-viewport-ruler-mark--major .object-editor-viewport-ruler-mark-label {
+  color: rgba(232, 241, 255, 0.96);
+  font-weight: 800;
+}
+
+.object-editor-viewport-ruler--top .object-editor-viewport-ruler-mark {
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.object-editor-viewport-ruler--top .object-editor-viewport-ruler-mark-line {
+  width: 1px;
+  height: 3px;
+}
+
+.object-editor-viewport-ruler--top
+  .object-editor-viewport-ruler-mark--major
+  .object-editor-viewport-ruler-mark-line {
+  height: 5px;
+}
+
+.object-editor-viewport-ruler--top .object-editor-viewport-ruler-mark-label {
+  margin-bottom: 1px;
+}
+
+.object-editor-viewport-ruler--left .object-editor-viewport-ruler-mark {
+  right: 0;
+  left: 0;
+  transform: translateY(-50%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 2px;
+  width: 100%;
+  padding-right: 1px;
+  box-sizing: border-box;
+}
+
+.object-editor-viewport-ruler--left .object-editor-viewport-ruler-mark-line {
+  grid-column: 2;
+  grid-row: 1;
+  width: 3px;
+  height: 1px;
+}
+
+.object-editor-viewport-ruler--left
+  .object-editor-viewport-ruler-mark--major
+  .object-editor-viewport-ruler-mark-line {
+  width: 5px;
+}
+
+.object-editor-viewport-ruler--left .object-editor-viewport-ruler-mark-label {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  margin: 0;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
 }
 
 .object-editor-viewport-controls {
@@ -340,6 +499,27 @@ body:has(.app-shell) {
   gap: 0.4rem;
   max-width: calc(100% - 1.1rem);
   pointer-events: auto;
+}
+
+.object-editor-axis-legend {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.45rem;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.object-editor-axis-legend-svg {
+  display: block;
+  width: 2.35rem;
+  height: 2.35rem;
+  overflow: visible;
+}
+
+.object-editor-axis-legend-bg {
+  fill: rgba(5, 10, 16, 0.82);
+  stroke: rgba(94, 170, 255, 0.24);
+  stroke-width: 1;
 }
 
 .object-editor-viewport-meta {
@@ -459,6 +639,42 @@ body:has(.app-shell) {
 .object-editor-icon-toggle:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+.object-editor-tool-popover-host {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 1.85rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  align-self: center;
+}
+
+.object-editor-tool-popover {
+  position: absolute;
+  top: calc(100% + 0.32rem);
+  left: 50%;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 0.22rem;
+  border: 1px solid rgba(94, 170, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(4, 8, 14, 0.9);
+  transform: translateX(-50%);
+}
+
+.object-editor-tool-popover::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -0.28rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-left: 1px solid rgba(94, 170, 255, 0.2);
+  border-top: 1px solid rgba(94, 170, 255, 0.2);
+  background: rgba(4, 8, 14, 0.9);
+  transform: translateX(-50%) rotate(45deg);
 }
 
 .object-editor-toolbar-divider {

@@ -37,10 +37,13 @@ import {
   faExpand,
   faHand,
   faLightbulb,
+  faLink,
   faPalette,
   faRotateLeft,
   faRotateRight,
   faRotate,
+  faRulerCombined,
+  faTags,
   faUpDownLeftRight,
   type IconDefinition,
 } from "@fortawesome/free-solid-svg-icons";
@@ -121,6 +124,20 @@ import {
   collectFolderIds,
   collectFolderIdsForAsset,
 } from "@/lib/objectEditor/buildModelTree";
+import {
+  createViewportRulerState,
+  type ViewportRulerState,
+} from "@/lib/objectEditor/viewportRuler";
+import {
+  createModelDimensionGuides,
+  type ModelDimensionGuideSet,
+} from "@/lib/objectEditor/modelDimensionGuides";
+import {
+  createViewportAxisLegendState,
+  type ViewportAxisLegendState,
+} from "@/lib/objectEditor/viewportAxisLegend";
+import ObjectEditorAxisLegend from "@/components/objectEditor/ObjectEditorAxisLegend";
+import ViewportRulerMark from "@/components/objectEditor/ViewportRulerMark";
 import ObjectEditorTree from "@/components/objectEditor/ObjectEditorTree";
 
 type ViewerStatus = "idle" | "loading" | "ready" | "error";
@@ -162,24 +179,6 @@ type SurfaceSelection = {
   unlit: boolean;
   hasEditableTextures: boolean;
   hasEditableFaceUvs: boolean;
-};
-
-type ViewportToggle = {
-  id:
-    | keyof ObjectEditorViewModes
-    | "grid"
-    | "gizmo"
-    | "undo"
-    | "redo"
-    | "viewport-rotate"
-    | "viewport-pan"
-    | GizmoMode
-    | ViewportMode;
-  label: string;
-  icon: IconDefinition;
-  active: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
 };
 
 type VectorSnapshot = {
@@ -235,7 +234,10 @@ function colorFromKelvin(kelvin: number): Color3 {
 const OBJECT_EDITOR_DEFAULT_PANNING_SENSIBILITY = 1000;
 const OBJECT_EDITOR_FRAME_ALPHA = Math.PI * 1.3;
 const OBJECT_EDITOR_FRAME_BETA = Math.PI * 0.38;
+const OBJECT_EDITOR_FRAME_FILL = 0.8;
 const OBJECT_EDITOR_MODEL_PREFIX = "objectEditor_";
+const OBJECT_EDITOR_SCALE_GIZMO_SENSITIVITY = 6;
+const OBJECT_EDITOR_MIN_SCALE = 0.001;
 
 function disposeEditorModelRoots(scene: Scene): void {
   for (const node of scene.transformNodes.slice()) {
@@ -275,7 +277,6 @@ function syncObjectEditorPanSensibility(camera: ArcRotateCamera): void {
   camera.panningSensibility = base * zoomScale;
 }
 
-
 function updateCameraDepthLimits(camera: ArcRotateCamera, root: TransformNode) {
   root.computeWorldMatrix(true);
   const bounds = root.getHierarchyBoundingVectors(true);
@@ -283,6 +284,37 @@ function updateCameraDepthLimits(camera: ArcRotateCamera, root: TransformNode) {
   const longestSide = Math.max(size.x, size.y, size.z, 0.001);
   camera.minZ = Math.max(longestSide * 0.0005, 0.00001);
   camera.maxZ = Math.max(longestSide * 1000, 1000);
+  updateObjectEditorPanSensibility(camera, longestSide);
+}
+
+function frameObjectInCamera(
+  camera: ArcRotateCamera,
+  root: TransformNode,
+  canvas: HTMLCanvasElement | null,
+): void {
+  root.computeWorldMatrix(true);
+  const bounds = root.getHierarchyBoundingVectors(true);
+  const size = bounds.max.subtract(bounds.min);
+  const center = bounds.min.add(size.scale(0.5));
+  const boundingRadius = Math.max(size.length() * 0.5, 0.001);
+  const aspect =
+    canvas && canvas.clientHeight > 0
+      ? Math.max(canvas.clientWidth / canvas.clientHeight, 0.001)
+      : 1;
+  const verticalFov = camera.fov;
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
+  const limitingFov = Math.min(verticalFov, horizontalFov);
+  const targetHalfAngle = Math.max(
+    (limitingFov * OBJECT_EDITOR_FRAME_FILL) / 2,
+    0.001,
+  );
+  const radius = boundingRadius / Math.sin(targetHalfAngle);
+
+  camera.alpha = OBJECT_EDITOR_FRAME_ALPHA;
+  camera.beta = OBJECT_EDITOR_FRAME_BETA;
+  camera.target = center;
+  camera.radius = Math.max(radius, 0.001);
+  updateCameraDepthLimits(camera, root);
 }
 
 function applyViewportMode(camera: ArcRotateCamera, mode: ViewportMode): void {
@@ -441,6 +473,14 @@ function applyTransform(node: TransformNode, snapshot: TransformSnapshot): void 
   node.computeWorldMatrix(true);
 }
 
+function clampObjectEditorScale(node: TransformNode): void {
+  node.scaling.set(
+    Math.max(node.scaling.x, OBJECT_EDITOR_MIN_SCALE),
+    Math.max(node.scaling.y, OBJECT_EDITOR_MIN_SCALE),
+    Math.max(node.scaling.z, OBJECT_EDITOR_MIN_SCALE),
+  );
+}
+
 function captureMaterial(material: Material | null): MaterialSnapshot | null {
   if (!material) {
     return null;
@@ -582,6 +622,44 @@ type NumericControlProps = {
   onChange: (value: number) => void;
 };
 
+type IconToggleButtonProps = {
+  label: string;
+  icon: IconDefinition;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+};
+
+function IconToggleButton({
+  label,
+  icon,
+  active = false,
+  disabled = false,
+  onClick,
+}: IconToggleButtonProps) {
+  return (
+    <button
+      type="button"
+      className={[
+        "object-editor-icon-toggle",
+        active ? "object-editor-icon-toggle--active" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label={label}
+      aria-pressed={active}
+      data-tooltip={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <FontAwesomeIcon icon={icon} />
+      <span className="object-editor-tooltip" role="tooltip">
+        {label}
+      </span>
+    </button>
+  );
+}
+
 function NumericControl({
   label,
   value,
@@ -715,6 +793,7 @@ export default function ObjectEditor() {
   const editorLoadSequenceRef = useRef(0);
   const gizmoManagerRef = useRef<GizmoManager | null>(null);
   const gridRef = useRef<LinesMesh | null>(null);
+  const dimensionGuidesRef = useRef<ModelDimensionGuideSet | null>(null);
   const selectedSurfaceMeshRef = useRef<Mesh | null>(null);
   const selectedFaceIdRef = useRef<number>(-1);
   const selectedRegionMeshesRef = useRef<Mesh[]>([]);
@@ -722,11 +801,18 @@ export default function ObjectEditor() {
   const [status, setStatus] = useState<ViewerStatus>("idle");
   const [selectedSurface, setSelectedSurface] = useState<SurfaceSelection | null>(null);
   const [gridVisible, setGridVisible] = useState(true);
+  const [rulersVisible, setRulersVisible] = useState(true);
+  const [dimensionLabelsVisible, setDimensionLabelsVisible] = useState(true);
+  const dimensionLabelsVisibleRef = useRef(dimensionLabelsVisible);
+  const [viewportRuler, setViewportRuler] = useState<ViewportRulerState | null>(null);
+  const [viewportAxisLegend, setViewportAxisLegend] =
+    useState<ViewportAxisLegendState | null>(null);
   const [viewportMode, setViewportMode] = useState<ViewportMode>("rotate");
   const viewportModeRef = useRef<ViewportMode>("rotate");
   const [sceneReadyGeneration, setSceneReadyGeneration] = useState(0);
   const [gizmoEnabled, setGizmoEnabled] = useState(true);
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("move");
+  const [scaleLinked, setScaleLinked] = useState(true);
   const [viewModes, setViewModes] = useState<ObjectEditorViewModes>({
     wireframe: false,
     lighting: true,
@@ -762,6 +848,7 @@ export default function ObjectEditor() {
   const clearSelectedRegionOutline = useCallback(() => {
     for (const mesh of selectedRegionMeshesRef.current) {
       mesh.renderOutline = false;
+      mesh.renderOverlay = false;
     }
     selectedRegionMeshesRef.current = [];
   }, []);
@@ -780,9 +867,12 @@ export default function ObjectEditor() {
             candidate instanceof Mesh && materialRegionKey(candidate) === regionKey,
         ) ?? [mesh];
     selectedRegionMeshesRef.current = regionMeshes;
-    mesh.outlineColor = new Color3(0.25, 0.7, 1);
-    mesh.outlineWidth = 0.004;
+    mesh.outlineColor = new Color3(0.26, 0.68, 1);
+    mesh.outlineWidth = 0.0025;
     mesh.renderOutline = true;
+    mesh.overlayColor = new Color3(0.18, 0.52, 1);
+    mesh.overlayAlpha = 0.08;
+    mesh.renderOverlay = true;
     setSelectedSurface(surfaceSelectionFromMesh(mesh, regionMeshes, faceId));
   }, [clearSelectedRegionOutline]);
 
@@ -793,6 +883,56 @@ export default function ObjectEditor() {
     selectedRegionMeshesRef.current = [];
     setSelectedSurface(null);
   }, [clearSelectedRegionOutline]);
+
+  useEffect(() => {
+    dimensionLabelsVisibleRef.current = dimensionLabelsVisible;
+  }, [dimensionLabelsVisible]);
+
+  const clearDimensionGuides = useCallback(() => {
+    dimensionGuidesRef.current?.dispose();
+    dimensionGuidesRef.current = null;
+  }, []);
+
+  const refreshObjectMeasurements = useCallback(() => {
+    const root = currentRootRef.current;
+    const camera = cameraRef.current;
+    const scene = sceneRef.current;
+    clearDimensionGuides();
+    if (!root || !scene) {
+      return;
+    }
+
+    if (dimensionLabelsVisibleRef.current) {
+      dimensionGuidesRef.current = createModelDimensionGuides(scene, root);
+      if (dimensionGuidesRef.current && camera && scene) {
+        dimensionGuidesRef.current.syncLabels(camera, scene);
+      }
+    }
+    if (camera) {
+      updateCameraDepthLimits(camera, root);
+    }
+  }, [clearDimensionGuides]);
+
+  const refreshViewportRuler = useCallback(() => {
+    const camera = cameraRef.current;
+    const canvas = canvasRef.current;
+    const scene = sceneRef.current;
+    setViewportRuler(
+      camera && canvas && scene
+        ? createViewportRulerState(camera, scene, canvas)
+        : null,
+    );
+    setViewportAxisLegend(
+      camera && canvas && scene
+        ? createViewportAxisLegendState(
+            camera,
+            scene,
+            canvas.clientWidth,
+            canvas.clientHeight,
+          )
+        : null,
+    );
+  }, []);
 
   const refreshSelectedSurface = useCallback(() => {
     const mesh = selectedSurfaceMeshRef.current;
@@ -838,11 +978,40 @@ export default function ObjectEditor() {
   );
 
   const commitHistorySnapshotRef = useRef(commitHistorySnapshot);
-  commitHistorySnapshotRef.current = commitHistorySnapshot;
+  const refreshObjectMeasurementsRef = useRef(refreshObjectMeasurements);
+  const refreshViewportRulerRef = useRef(refreshViewportRuler);
   const selectSurfaceMeshRef = useRef(selectSurfaceMesh);
-  selectSurfaceMeshRef.current = selectSurfaceMesh;
+  const clearSurfaceSelectionRef = useRef(clearSurfaceSelection);
+  const clearDimensionGuidesRef = useRef(clearDimensionGuides);
   const clearSelectedRegionOutlineRef = useRef(clearSelectedRegionOutline);
-  clearSelectedRegionOutlineRef.current = clearSelectedRegionOutline;
+
+  useEffect(() => {
+    commitHistorySnapshotRef.current = commitHistorySnapshot;
+  }, [commitHistorySnapshot]);
+
+  useEffect(() => {
+    refreshObjectMeasurementsRef.current = refreshObjectMeasurements;
+  }, [refreshObjectMeasurements]);
+
+  useEffect(() => {
+    refreshViewportRulerRef.current = refreshViewportRuler;
+  }, [refreshViewportRuler]);
+
+  useEffect(() => {
+    selectSurfaceMeshRef.current = selectSurfaceMesh;
+  }, [selectSurfaceMesh]);
+
+  useEffect(() => {
+    clearSurfaceSelectionRef.current = clearSurfaceSelection;
+  }, [clearSurfaceSelection]);
+
+  useEffect(() => {
+    clearDimensionGuidesRef.current = clearDimensionGuides;
+  }, [clearDimensionGuides]);
+
+  useEffect(() => {
+    clearSelectedRegionOutlineRef.current = clearSelectedRegionOutline;
+  }, [clearSelectedRegionOutline]);
 
   const resolveEditorDisplayAsset = useCallback(
     (target: EditorSelection): DisplayAsset | undefined => {
@@ -868,6 +1037,7 @@ export default function ObjectEditor() {
     setViewModes({ wireframe: false, lighting: true, texture: true });
     setGizmoMode("move");
     setGizmoEnabled(true);
+    setScaleLinked(true);
     setOilBarrelEditorActive(false);
     setOilBarrelFireEnabled(loadOilBarrelEditorInteriorFire());
     setOilBarrelFireTuning(getDefaultOilBarrelEditorFireTuning());
@@ -878,9 +1048,10 @@ export default function ObjectEditor() {
     setIsDirty(false);
     refreshHistoryAvailability();
     currentRootRef.current = null;
+    clearDimensionGuides();
     gizmoManagerRef.current?.attachToNode(null);
     gizmoManagerRef.current?.attachToMesh(null);
-  }, [clearSurfaceSelection, refreshHistoryAvailability]);
+  }, [clearSurfaceSelection, clearDimensionGuides, refreshHistoryAvailability]);
 
   const queueEditorAssetSelection = useCallback(
     (nextSelection: EditorSelection) => {
@@ -903,9 +1074,15 @@ export default function ObjectEditor() {
     historyRef.current.redo.push(current);
     applyObjectEditorSnapshot(currentRootRef.current, previous);
     refreshSelectedSurface();
+    refreshObjectMeasurements();
     refreshHistoryAvailability();
     refreshDirtyState();
-  }, [refreshDirtyState, refreshHistoryAvailability, refreshSelectedSurface]);
+  }, [
+    refreshDirtyState,
+    refreshHistoryAvailability,
+    refreshObjectMeasurements,
+    refreshSelectedSurface,
+  ]);
 
   const redoEditorHistory = useCallback(() => {
     const next = historyRef.current.redo.pop();
@@ -916,9 +1093,15 @@ export default function ObjectEditor() {
     historyRef.current.undo.push(current);
     applyObjectEditorSnapshot(currentRootRef.current, next);
     refreshSelectedSurface();
+    refreshObjectMeasurements();
     refreshHistoryAvailability();
     refreshDirtyState();
-  }, [refreshDirtyState, refreshHistoryAvailability, refreshSelectedSurface]);
+  }, [
+    refreshDirtyState,
+    refreshHistoryAvailability,
+    refreshObjectMeasurements,
+    refreshSelectedSurface,
+  ]);
 
   useEffect(() => {
     void fetchModelLibrary()
@@ -1044,10 +1227,14 @@ export default function ObjectEditor() {
     grid.color = new Color3(0.18, 0.42, 0.68);
     grid.alpha = 0.42;
     grid.isPickable = false;
-    grid.isVisible = gridVisible;
+    grid.isVisible = true;
     gridRef.current = grid;
 
     let lastSurfaceSyncMs = 0;
+    let lastMeasurementSyncMs = 0;
+    let lastMeasurementRecoveryMs = 0;
+    let lastViewportRulerSyncMs = 0;
+    let lastViewportRulerKey = "";
     let wasGizmoDragging = false;
     let gizmoDragSnapshot: ObjectEditorHistorySnapshot | null = null;
     const onPointerDown = (event: PointerEvent) => {
@@ -1066,24 +1253,64 @@ export default function ObjectEditor() {
         return Boolean(currentRootRef.current?.getChildMeshes(false).includes(candidate));
       });
       if (pick?.hit && pick.pickedMesh instanceof Mesh) {
+        if (
+          selectedSurfaceMeshRef.current === pick.pickedMesh &&
+          selectedFaceIdRef.current === pick.faceId
+        ) {
+          clearSurfaceSelectionRef.current();
+          return;
+        }
         selectSurfaceMeshRef.current(pick.pickedMesh, pick.faceId);
+        return;
       }
+      clearSurfaceSelectionRef.current();
     };
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointerup", onPointerUp);
     engine.runRenderLoop(() => {
+      const now = performance.now();
+      if (now - lastViewportRulerSyncMs > 160) {
+        lastViewportRulerSyncMs = now;
+        const rulerKey = [
+          Math.round(camera.radius * 10000),
+          Math.round(camera.fov * 10000),
+          Math.round(camera.target.x * 10000),
+          Math.round(camera.target.y * 10000),
+          Math.round(camera.target.z * 10000),
+          Math.round(camera.alpha * 10000),
+          Math.round(camera.beta * 10000),
+          canvas.clientWidth,
+          canvas.clientHeight,
+        ].join(":");
+        if (rulerKey !== lastViewportRulerKey) {
+          lastViewportRulerKey = rulerKey;
+          refreshViewportRulerRef.current();
+        }
+      }
+
       const isGizmoDragging = gizmoManager.isDragging;
       if (isGizmoDragging && !wasGizmoDragging) {
         gizmoDragSnapshot = captureObjectEditorSnapshot(currentRootRef.current);
       }
+      if (isGizmoDragging && currentRootRef.current) {
+        clampObjectEditorScale(currentRootRef.current);
+        if (now - lastMeasurementSyncMs > 90) {
+          lastMeasurementSyncMs = now;
+          refreshObjectMeasurementsRef.current();
+          refreshViewportRulerRef.current();
+        }
+      }
       if (!isGizmoDragging && wasGizmoDragging) {
+        if (currentRootRef.current) {
+          clampObjectEditorScale(currentRootRef.current);
+        }
         commitHistorySnapshotRef.current(gizmoDragSnapshot);
+        refreshObjectMeasurementsRef.current();
         gizmoDragSnapshot = null;
       }
       wasGizmoDragging = isGizmoDragging;
 
       if (gizmoManager.isDragging && selectedSurfaceMeshRef.current) {
-        const now = performance.now();
         if (now - lastSurfaceSyncMs > 90) {
           lastSurfaceSyncMs = now;
           setSelectedSurface(
@@ -1100,13 +1327,29 @@ export default function ObjectEditor() {
         camera,
         performance.now() / 1000,
       );
+      if (
+        dimensionLabelsVisibleRef.current &&
+        currentRootRef.current &&
+        !dimensionGuidesRef.current &&
+        now - lastMeasurementRecoveryMs > 250
+      ) {
+        lastMeasurementRecoveryMs = now;
+        refreshObjectMeasurementsRef.current();
+      }
+      if (dimensionGuidesRef.current) {
+        dimensionGuidesRef.current.syncLabels(camera, scene);
+      }
       scene.render();
     });
 
-    const resize = () => engine.resize();
+    const resize = () => {
+      engine.resize();
+      refreshViewportRulerRef.current();
+    };
     window.addEventListener("resize", resize);
     const resizeObserver = new ResizeObserver(() => {
       engine.resize();
+      refreshViewportRulerRef.current();
     });
     resizeObserver.observe(canvas);
     resize();
@@ -1120,6 +1363,7 @@ export default function ObjectEditor() {
       camera.detachControl();
       engine.stopRenderLoop();
       camera.onAfterCheckInputsObservable.remove(panSyncObserver);
+      clearDimensionGuidesRef.current();
       disposeEditorModelRoots(scene);
       clearSelectedRegionOutlineRef.current();
       gizmoManager.dispose();
@@ -1149,6 +1393,7 @@ export default function ObjectEditor() {
       !scene.isDisposed &&
       loadId === editorLoadSequenceRef.current;
 
+    clearDimensionGuides();
     disposeEditorModelRoots(scene);
     currentRootRef.current = null;
     gizmoManagerRef.current?.attachToNode(null);
@@ -1223,7 +1468,14 @@ export default function ObjectEditor() {
         currentRootRef.current = committedRoot;
         clearObjectEditorMaterialSnapshots(committedRoot);
         applyObjectEditorViewModes(committedRoot, viewModesRef.current);
-        updateCameraDepthLimits(camera, committedRoot);
+        frameObjectInCamera(camera, committedRoot, canvasRef.current);
+        refreshObjectMeasurementsRef.current();
+        requestAnimationFrame(() => {
+          if (currentRootRef.current === committedRoot) {
+            refreshObjectMeasurementsRef.current();
+          }
+        });
+        refreshViewportRulerRef.current();
         baselineSnapshotRef.current = captureObjectEditorSnapshot(committedRoot);
         refreshHistoryAvailability();
         refreshDirtyState();
@@ -1247,6 +1499,7 @@ export default function ObjectEditor() {
   }, [
     selection,
     displayAsset,
+    clearDimensionGuides,
     refreshDirtyState,
     refreshHistoryAvailability,
   ]);
@@ -1266,6 +1519,10 @@ export default function ObjectEditor() {
   }, [gridVisible]);
 
   useEffect(() => {
+    refreshObjectMeasurements();
+  }, [refreshObjectMeasurements, sceneReadyGeneration, dimensionLabelsVisible]);
+
+  useEffect(() => {
     const gizmoManager = gizmoManagerRef.current;
     if (!gizmoManager) {
       return;
@@ -1275,12 +1532,21 @@ export default function ObjectEditor() {
     gizmoManager.positionGizmoEnabled = shouldShow && gizmoMode === "move";
     gizmoManager.rotationGizmoEnabled = shouldShow && gizmoMode === "rotate";
     gizmoManager.scaleGizmoEnabled = shouldShow && gizmoMode === "scale";
+    const scaleGizmo = gizmoManager.gizmos.scaleGizmo;
+    if (scaleGizmo) {
+      scaleGizmo.sensitivity = OBJECT_EDITOR_SCALE_GIZMO_SENSITIVITY;
+      scaleGizmo.snapDistance = 0;
+      scaleGizmo.incrementalSnap = false;
+      scaleGizmo.xGizmo.uniformScaling = scaleLinked;
+      scaleGizmo.yGizmo.uniformScaling = scaleLinked;
+      scaleGizmo.zGizmo.uniformScaling = scaleLinked;
+    }
     gizmoManager.attachToNode(null);
     gizmoManager.attachToMesh(null);
     if (shouldShow) {
       gizmoManager.attachToNode(currentRootRef.current);
     }
-  }, [gizmoEnabled, gizmoMode, status, sceneReadyGeneration]);
+  }, [gizmoEnabled, gizmoMode, scaleLinked, status, sceneReadyGeneration]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1572,6 +1838,7 @@ export default function ObjectEditor() {
     applyObjectEditorViewModes(root, viewModesRef.current);
     historyRef.current = { undo: [], redo: [] };
     refreshSelectedSurface();
+    refreshObjectMeasurements();
     refreshHistoryAvailability();
     refreshDirtyState();
     setSaveStatus("idle");
@@ -1579,6 +1846,7 @@ export default function ObjectEditor() {
   }, [
     refreshDirtyState,
     refreshHistoryAvailability,
+    refreshObjectMeasurements,
     refreshSelectedSurface,
     saveStatus,
     status,
@@ -1598,6 +1866,7 @@ export default function ObjectEditor() {
         });
         saveOilBarrelEditorFireTuningPatch(next);
         applyOilBarrelFireTuning(root, next);
+        refreshObjectMeasurementsRef.current();
         return next;
       });
     },
@@ -1739,85 +2008,6 @@ export default function ObjectEditor() {
     return () => window.removeEventListener("resize", clampPanelSizes);
   }, [getMaxSidebarWidth, getMaxToolsWidth]);
 
-  const viewportToggles: ViewportToggle[] = [
-    {
-      id: "viewport-rotate",
-      label: "Rotate view",
-      icon: faRotate,
-      active: viewportMode === "rotate",
-      onToggle: () => {
-        viewportModeRef.current = "rotate";
-        setViewportMode("rotate");
-      },
-    },
-    {
-      id: "viewport-pan",
-      label: "Pan view",
-      icon: faHand,
-      active: viewportMode === "pan",
-      onToggle: () => {
-        viewportModeRef.current = "pan";
-        setViewportMode("pan");
-      },
-    },
-    {
-      id: "wireframe",
-      label: "Wireframe",
-      icon: faCube,
-      active: viewModes.wireframe,
-      onToggle: () => setViewMode("wireframe", !viewModes.wireframe),
-    },
-    {
-      id: "lighting",
-      label: "Lighting",
-      icon: faLightbulb,
-      active: viewModes.lighting,
-      onToggle: () => setViewMode("lighting", !viewModes.lighting),
-    },
-    {
-      id: "texture",
-      label: "Texture",
-      icon: faPalette,
-      active: viewModes.texture,
-      onToggle: () => setViewMode("texture", !viewModes.texture),
-    },
-    {
-      id: "gizmo",
-      label: "Transform gizmo",
-      icon: faCrosshairs,
-      active: gizmoEnabled,
-      onToggle: () => setGizmoEnabled((current) => !current),
-    },
-    {
-      id: "move",
-      label: "Move gizmo",
-      icon: faUpDownLeftRight,
-      active: gizmoEnabled && gizmoMode === "move",
-      onToggle: () => toggleGizmoMode("move"),
-    },
-    {
-      id: "rotate",
-      label: "Rotate gizmo",
-      icon: faArrowsRotate,
-      active: gizmoEnabled && gizmoMode === "rotate",
-      onToggle: () => toggleGizmoMode("rotate"),
-    },
-    {
-      id: "scale",
-      label: "Scale gizmo",
-      icon: faExpand,
-      active: gizmoEnabled && gizmoMode === "scale",
-      onToggle: () => toggleGizmoMode("scale"),
-    },
-    {
-      id: "grid",
-      label: "Grid",
-      icon: faBorderAll,
-      active: gridVisible,
-      onToggle: () => setGridVisible((current) => !current),
-    },
-  ];
-
   return (
     <main
       ref={shellRef}
@@ -1889,127 +2079,141 @@ export default function ObjectEditor() {
 
       <section className="object-editor-viewer-panel" aria-label="Object viewer">
         <div className="object-editor-canvas-wrap">
-          <div className="object-editor-viewport-controls">
-            {viewportToggles.slice(0, 2).map((toggle) => (
-              <button
-                key={toggle.id}
-                type="button"
-                className={[
-                  "object-editor-icon-toggle",
-                  toggle.active ? "object-editor-icon-toggle--active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label={toggle.label}
-                aria-pressed={toggle.active}
-                data-tooltip={toggle.label}
-                disabled={toggle.disabled}
-                onClick={toggle.onToggle}
+          <div
+            className={[
+              "object-editor-viewport-frame",
+              rulersVisible ? "" : "object-editor-viewport-frame--no-rulers",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {rulersVisible ? (
+              <div className="object-editor-viewport-corner" aria-hidden="true">
+                0
+              </div>
+            ) : null}
+            {rulersVisible ? (
+              <div
+                className="object-editor-viewport-ruler object-editor-viewport-ruler--left"
+                aria-label="Viewport vertical ruler"
               >
-                <FontAwesomeIcon icon={toggle.icon} />
-                <span className="object-editor-tooltip" role="tooltip">
-                  {toggle.label}
-                </span>
-              </button>
-            ))}
+                {viewportRuler?.verticalTicks.map((tick) => (
+                  <ViewportRulerMark
+                    key={`y-${tick.position}-${tick.label ?? "minor"}`}
+                    tick={tick}
+                    axis="vertical"
+                  />
+                ))}
+              </div>
+            ) : null}
+            <div className="object-editor-viewport-stage">
+              <div className="object-editor-viewport-controls">
+            <IconToggleButton
+              label="Rotate view"
+              icon={faRotate}
+              active={viewportMode === "rotate"}
+              onClick={() => {
+                viewportModeRef.current = "rotate";
+                setViewportMode("rotate");
+              }}
+            />
+            <IconToggleButton
+              label="Pan view"
+              icon={faHand}
+              active={viewportMode === "pan"}
+              onClick={() => {
+                viewportModeRef.current = "pan";
+                setViewportMode("pan");
+              }}
+            />
             <span className="object-editor-toolbar-divider" aria-hidden="true" />
-            <button
-              type="button"
-              className="object-editor-icon-toggle"
-              aria-label="Undo"
-              aria-pressed="false"
-              data-tooltip="Undo"
+            <IconToggleButton
+              label="Undo"
+              icon={faRotateLeft}
               disabled={!historyAvailability.canUndo}
               onClick={undoEditorHistory}
-            >
-              <FontAwesomeIcon icon={faRotateLeft} />
-              <span className="object-editor-tooltip" role="tooltip">
-                Undo
-              </span>
-            </button>
-            <button
-              type="button"
-              className="object-editor-icon-toggle"
-              aria-label="Redo"
-              aria-pressed="false"
-              data-tooltip="Redo"
+            />
+            <IconToggleButton
+              label="Redo"
+              icon={faRotateRight}
               disabled={!historyAvailability.canRedo}
               onClick={redoEditorHistory}
-            >
-              <FontAwesomeIcon icon={faRotateRight} />
-              <span className="object-editor-tooltip" role="tooltip">
-                Redo
-              </span>
-            </button>
+            />
             <span className="object-editor-toolbar-divider" aria-hidden="true" />
-            {viewportToggles.slice(2, 5).map((toggle) => (
-              <button
-                key={toggle.id}
-                type="button"
-                className={[
-                  "object-editor-icon-toggle",
-                  toggle.active ? "object-editor-icon-toggle--active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label={toggle.label}
-                aria-pressed={toggle.active}
-                data-tooltip={toggle.label}
-                disabled={toggle.disabled}
-                onClick={toggle.onToggle}
-              >
-                <FontAwesomeIcon icon={toggle.icon} />
-                <span className="object-editor-tooltip" role="tooltip">
-                  {toggle.label}
-                </span>
-              </button>
-            ))}
+            <IconToggleButton
+              label="Wireframe"
+              icon={faCube}
+              active={viewModes.wireframe}
+              onClick={() => setViewMode("wireframe", !viewModes.wireframe)}
+            />
+            <IconToggleButton
+              label="Lighting"
+              icon={faLightbulb}
+              active={viewModes.lighting}
+              onClick={() => setViewMode("lighting", !viewModes.lighting)}
+            />
+            <IconToggleButton
+              label="Texture"
+              icon={faPalette}
+              active={viewModes.texture}
+              onClick={() => setViewMode("texture", !viewModes.texture)}
+            />
             <span className="object-editor-toolbar-divider" aria-hidden="true" />
-            {viewportToggles.slice(5, 9).map((toggle) => (
-              <button
-                key={toggle.id}
-                type="button"
-                className={[
-                  "object-editor-icon-toggle",
-                  toggle.active ? "object-editor-icon-toggle--active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label={toggle.label}
-                aria-pressed={toggle.active}
-                data-tooltip={toggle.label}
-                disabled={toggle.disabled}
-                onClick={toggle.onToggle}
-              >
-                <FontAwesomeIcon icon={toggle.icon} />
-                <span className="object-editor-tooltip" role="tooltip">
-                  {toggle.label}
-                </span>
-              </button>
-            ))}
+            <IconToggleButton
+              label="Transform gizmo"
+              icon={faCrosshairs}
+              active={gizmoEnabled}
+              onClick={() => setGizmoEnabled((current) => !current)}
+            />
+            <IconToggleButton
+              label="Move gizmo"
+              icon={faUpDownLeftRight}
+              active={gizmoEnabled && gizmoMode === "move"}
+              onClick={() => toggleGizmoMode("move")}
+            />
+            <IconToggleButton
+              label="Rotate gizmo"
+              icon={faArrowsRotate}
+              active={gizmoEnabled && gizmoMode === "rotate"}
+              onClick={() => toggleGizmoMode("rotate")}
+            />
+            <div className="object-editor-tool-popover-host">
+              <IconToggleButton
+                label="Scale gizmo"
+                icon={faExpand}
+                active={gizmoEnabled && gizmoMode === "scale"}
+                onClick={() => toggleGizmoMode("scale")}
+              />
+              {gizmoEnabled && gizmoMode === "scale" ? (
+                <div className="object-editor-tool-popover">
+                  <IconToggleButton
+                    label="Linked scale"
+                    icon={faLink}
+                    active={scaleLinked}
+                    onClick={() => setScaleLinked((current) => !current)}
+                  />
+                </div>
+              ) : null}
+            </div>
             <span className="object-editor-toolbar-divider" aria-hidden="true" />
-            {viewportToggles.slice(9).map((toggle) => (
-              <button
-                key={toggle.id}
-                type="button"
-                className={[
-                  "object-editor-icon-toggle",
-                  toggle.active ? "object-editor-icon-toggle--active" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-label={toggle.label}
-                aria-pressed={toggle.active}
-                data-tooltip={toggle.label}
-                disabled={toggle.disabled}
-                onClick={toggle.onToggle}
-              >
-                <FontAwesomeIcon icon={toggle.icon} />
-                <span className="object-editor-tooltip" role="tooltip">
-                  {toggle.label}
-                </span>
-              </button>
-            ))}
+            <IconToggleButton
+              label="Grid"
+              icon={faBorderAll}
+              active={gridVisible}
+              onClick={() => setGridVisible((current) => !current)}
+            />
+            <IconToggleButton
+              label="Rulers"
+              icon={faRulerCombined}
+              active={rulersVisible}
+              onClick={() => setRulersVisible((current) => !current)}
+            />
+            <IconToggleButton
+              label="Size labels"
+              icon={faTags}
+              active={dimensionLabelsVisible}
+              onClick={() => setDimensionLabelsVisible((current) => !current)}
+            />
           </div>
           <div className="object-editor-viewport-meta">
             <div>
@@ -2041,19 +2245,36 @@ export default function ObjectEditor() {
               </div>
             ) : null}
           </div>
-          <canvas ref={canvasRef} className="object-editor-canvas" />
-          {!displayAsset ? (
-            <div className="object-editor-empty">
-              <strong>Select a model</strong>
-              <span>Choose an object from the left tree or load a GLB.</span>
+              <canvas ref={canvasRef} className="object-editor-canvas" />
+              {!displayAsset ? (
+                <div className="object-editor-empty">
+                  <strong>Select a model</strong>
+                  <span>Choose an object from the left tree or load a GLB.</span>
+                </div>
+              ) : null}
+              {status === "error" ? (
+                <div className="object-editor-empty">
+                  <strong>Could not load asset</strong>
+                  <span>{displayAsset?.path}</span>
+                </div>
+              ) : null}
+              <ObjectEditorAxisLegend legend={viewportAxisLegend} />
             </div>
-          ) : null}
-          {status === "error" ? (
-            <div className="object-editor-empty">
-              <strong>Could not load asset</strong>
-              <span>{displayAsset?.path}</span>
-            </div>
-          ) : null}
+            {rulersVisible ? (
+              <div
+                className="object-editor-viewport-ruler object-editor-viewport-ruler--top"
+                aria-label="Viewport horizontal ruler"
+              >
+                {viewportRuler?.horizontalTicks.map((tick) => (
+                  <ViewportRulerMark
+                    key={`x-${tick.position}-${tick.label ?? "minor"}`}
+                    tick={tick}
+                    axis="horizontal"
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -2101,6 +2322,7 @@ export default function ObjectEditor() {
               </dd>
             </div>
           </dl>
+          <p className="object-editor-save-hint">Scene units: 1 unit = 1 meter.</p>
         </section>
 
         {oilBarrelEditorActive ? (
